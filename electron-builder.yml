@@ -1,0 +1,14 @@
+appId: dev.tippydial.soundboard
+productName: Soundboard
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - package.json
+linux:
+  target:
+    - AppImage
+    - deb
+  category: AudioVideo
+  maintainer: tippydial

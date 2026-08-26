@@ -1,0 +1,38 @@
+{
+  "name": "soundboard",
+  "version": "0.1.0",
+  "description": "A Linux soundboard that mixes clips into a virtual microphone for Discord (and any other app) while monitoring playback through your headphones.",
+  "main": "./out/main/index.js",
+  "author": "tippydial",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "dist:linux": "electron-vite build && electron-builder --linux"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@types/node": "^22.7.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.0.2",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.47",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8"
+  }
+}
