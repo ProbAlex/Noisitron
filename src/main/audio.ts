@@ -10,6 +10,7 @@ import { VIRTUAL_MIC_SINK_DESCRIPTION, type AudioDevice, type VirtualMicStatus }
 
 export const VIRTUAL_SINK_NAME = 'soundboard_mic'
 export const VIRTUAL_MONITOR_NAME = `${VIRTUAL_SINK_NAME}.monitor`
+export const VIRTUAL_SOURCE_NAME = `${VIRTUAL_SINK_NAME}.mic`
 
 function pactl(args: string[]): Promise<string> {
   return new Promise((resolvePromise, reject) => {
@@ -82,12 +83,18 @@ export async function listSinks(): Promise<AudioDevice[]> {
 /** Removes any leftover soundboard modules from a previous run that crashed / was killed. */
 export async function cleanupStaleModules(): Promise<void> {
   const modules = await listModulesShort()
+  const staleSources = modules.filter(
+    (m) => m.name === 'module-remap-source' && m.argument.includes(`source_name=${VIRTUAL_SOURCE_NAME}`)
+  )
   const staleLoopbacks = modules.filter(
     (m) => m.name === 'module-loopback' && m.argument.includes(`sink=${VIRTUAL_SINK_NAME}`)
   )
   const staleSinks = modules.filter(
     (m) => m.name === 'module-null-sink' && m.argument.includes(`sink_name=${VIRTUAL_SINK_NAME}`)
   )
+  for (const m of staleSources) {
+    await pactl(['unload-module', m.index]).catch(() => {})
+  }
   for (const m of staleLoopbacks) {
     await pactl(['unload-module', m.index]).catch(() => {})
   }
@@ -98,6 +105,7 @@ export async function cleanupStaleModules(): Promise<void> {
 
 interface InternalState {
   sinkModuleId: string | null
+  sourceModuleId: string | null
   loopbackModuleId: string | null
   loopbackSinkInputIndex: number | null
   micSourceName: string | null
@@ -106,10 +114,22 @@ interface InternalState {
 
 const state: InternalState = {
   sinkModuleId: null,
+  sourceModuleId: null,
   loopbackModuleId: null,
   loopbackSinkInputIndex: null,
   micSourceName: null,
   micLoopbackVolumePercent: 100
+}
+
+async function loadVirtualSource(): Promise<void> {
+  const id = await pactl([
+    'load-module',
+    'module-remap-source',
+    `master=${VIRTUAL_MONITOR_NAME}`,
+    `source_name=${VIRTUAL_SOURCE_NAME}`,
+    `source_properties=device.description=${VIRTUAL_MIC_SINK_DESCRIPTION}`
+  ])
+  state.sourceModuleId = id
 }
 
 async function loadLoopback(sourceName: string): Promise<void> {
@@ -141,11 +161,18 @@ async function unloadLoopback(): Promise<void> {
   state.micSourceName = null
 }
 
+async function unloadVirtualSource(): Promise<void> {
+  if (state.sourceModuleId) {
+    await pactl(['unload-module', state.sourceModuleId]).catch(() => {})
+  }
+  state.sourceModuleId = null
+}
+
 export function getStatus(): VirtualMicStatus {
   return {
     active: state.sinkModuleId !== null,
     sinkName: VIRTUAL_SINK_NAME,
-    monitorSourceName: VIRTUAL_MONITOR_NAME,
+    monitorSourceName: VIRTUAL_SOURCE_NAME,
     micSourceName: state.micSourceName,
     micLoopbackVolumePercent: state.micLoopbackVolumePercent
   }
@@ -161,6 +188,9 @@ export async function createVirtualMic(micSourceName: string | null): Promise<Vi
       `sink_properties=device.description=${VIRTUAL_MIC_SINK_DESCRIPTION}`
     ])
   }
+  if (state.sourceModuleId === null) {
+    await loadVirtualSource()
+  }
   if (micSourceName) {
     await setMicSource(micSourceName)
   }
@@ -169,6 +199,7 @@ export async function createVirtualMic(micSourceName: string | null): Promise<Vi
 
 export async function destroyVirtualMic(): Promise<void> {
   await unloadLoopback()
+  await unloadVirtualSource()
   if (state.sinkModuleId) {
     await pactl(['unload-module', state.sinkModuleId]).catch(() => {})
   }

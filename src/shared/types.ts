@@ -13,8 +13,9 @@ export interface AudioDevice {
 
 export interface VirtualMicStatus {
   active: boolean
-  /** name of the null-sink Discord (or any app) should select as input, via its .monitor source */
+  /** name of the null-sink the soundboard routes audio into */
   sinkName: string
+  /** name of the standalone virtual microphone source Discord (or any app) should select as input */
   monitorSourceName: string
   micSourceName: string | null
   micLoopbackVolumePercent: number
