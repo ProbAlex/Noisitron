@@ -1,6 +1,6 @@
 pkgbase = noisitron-bin
 	pkgdesc = Soundboard that mixes clips into a virtual mic for Discord
-	pkgver = 0.1.0
+	pkgver = 0.2.0
 	pkgrel = 1
 	url = https://github.com/ProbAlex/Noisitron
 	arch = x86_64
@@ -19,7 +19,7 @@ pkgbase = noisitron-bin
 	conflicts = noisitron
 	options = !strip
 	options = !debug
-	source = https://github.com/ProbAlex/Noisitron/releases/download/v0.1.0/noisitron_0.1.0_amd64.deb
+	source = https://github.com/ProbAlex/Noisitron/releases/download/v0.2.0/noisitron_0.2.0_amd64.deb
 	sha256sums = SKIP
 
 pkgname = noisitron-bin
