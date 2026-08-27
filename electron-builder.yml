@@ -29,7 +29,8 @@ deb:
 rpm:
   afterInstall: build/linux/after-install.sh
   afterRemove: build/linux/after-remove.sh
-publish:
-  provider: github
-  owner: ProbAlex
-  repo: Noisitron
+# No `publish:` block: releasing is handled explicitly by the workflow's own
+# `gh release create` step (after the AppImage update-info post-processing runs), not by
+# electron-builder's built-in publisher. Leaving a `publish:` config here - even without
+# ever passing --publish - makes electron-builder auto-detect "CI + a tag build" and try to
+# publish during the build step itself, before GH_TOKEN is even set for that step.
