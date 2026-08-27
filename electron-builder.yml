@@ -1,5 +1,6 @@
 appId: dev.tippydial.noisitron
 productName: Noisitron
+copyright: Copyright © tippydial
 directories:
   buildResources: build
   output: dist
@@ -10,5 +11,22 @@ linux:
   target:
     - AppImage
     - deb
+    - rpm
   category: AudioVideo
   maintainer: tippydial
+  vendor: tippydial
+  synopsis: Soundboard that mixes clips into a virtual mic for Discord
+  description: >-
+    Noisitron mixes local audio clips into a virtual PulseAudio/PipeWire
+    microphone so Discord (or any other app) hears them alongside your
+    voice, while you monitor playback through your headphones.
+deb:
+  afterInstall: build/linux/after-install.sh
+  afterRemove: build/linux/after-remove.sh
+rpm:
+  afterInstall: build/linux/after-install.sh
+  afterRemove: build/linux/after-remove.sh
+publish:
+  provider: github
+  owner: ProbAlex
+  repo: Noisitron

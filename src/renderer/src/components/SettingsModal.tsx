@@ -10,18 +10,22 @@ function SectionHeading({ children }: { children: string }) {
   return <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</h3>
 }
 
-function CopyableCommand({ command }: { command: string }) {
+function CopyableCommand({ command }: { command: string | null }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="flex items-center gap-2 rounded-lg border border-base-700 bg-base-950 px-3 py-2">
-      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs text-slate-300">{command}</code>
+      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs text-slate-300">
+        {command ?? 'Resolving…'}
+      </code>
       <button
+        disabled={!command}
         onClick={() => {
-          navigator.clipboard.writeText(command).catch(() => {})
+          if (!command) return
+          void window.api.app.copyToClipboard(command)
           setCopied(true)
           setTimeout(() => setCopied(false), 1200)
         }}
-        className="shrink-0 rounded-md border border-base-600 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-base-500 hover:text-slate-100"
+        className="shrink-0 rounded-md border border-base-600 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-base-500 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {copied ? 'Copied' : 'Copy'}
       </button>
@@ -168,8 +172,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             Point a Stream Deck "System: Open" action (or any launcher) at Noisitron with these flags. If
             Noisitron is already running, it plays instantly in the running app instead of opening a new window.
           </p>
-          <CopyableCommand command={`${execPath ?? 'noisitron'} --play="${exampleSoundName}"`} />
-          <CopyableCommand command={`${execPath ?? 'noisitron'} --list-sounds`} />
+          <CopyableCommand command={execPath ? `${execPath} --play="${exampleSoundName}"` : null} />
+          <CopyableCommand command={execPath ? `${execPath} --list-sounds` : null} />
           <p className="text-xs text-slate-500">
             <code className="text-slate-400">--list-sounds</code> prints every sound's exact name (and id) to
             the terminal so you can copy it into a Stream Deck button. A global keybind for a sound is set from

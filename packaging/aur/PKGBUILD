@@ -1,0 +1,28 @@
+# Maintainer: tippydial
+pkgname=noisitron-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Soundboard that mixes clips into a virtual mic for Discord"
+arch=('x86_64')
+url="https://github.com/ProbAlex/Noisitron"
+license=('GPL-3.0-only')
+depends=('gtk3' 'nss' 'libxss' 'libxtst' 'libnotify' 'at-spi2-core' 'libsecret' 'xdg-utils' 'libpulse')
+optdepends=('libappindicator-gtk3: system tray icon support')
+provides=('noisitron')
+conflicts=('noisitron')
+options=('!strip' '!debug')
+source=("https://github.com/ProbAlex/Noisitron/releases/download/v${pkgver}/noisitron_${pkgver}_amd64.deb")
+sha256sums=('SKIP')
+
+package() {
+  cd "$srcdir"
+  ar x "noisitron_${pkgver}_amd64.deb"
+  tar xf data.tar.* -C "$pkgdir"
+
+  # electron-builder's .deb wires this symlink up via a postinst maintainer
+  # script, which pacman never runs - create it directly instead so the app
+  # is invocable as a plain `noisitron` command (Stream Deck buttons, shell
+  # aliases, etc.) without anyone having to hard-code /opt/Noisitron/....
+  install -d "$pkgdir/usr/bin"
+  ln -sf /opt/Noisitron/noisitron "$pkgdir/usr/bin/noisitron"
+}

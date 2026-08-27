@@ -5,7 +5,8 @@ import {
   ipcMain,
   dialog,
   session,
-  globalShortcut
+  globalShortcut,
+  clipboard
 } from 'electron'
 import { join, extname, basename } from 'path'
 import { promises as fs } from 'fs'
@@ -28,6 +29,17 @@ function getSoundsDir(): string {
 
 function getIconsDir(): string {
   return join(app.getPath('userData'), 'icons')
+}
+
+/** The command a Stream Deck button / shell alias should invoke, resolved for however
+ *  this copy of the app is actually running - never hard-coded to a single install style.
+ *  Running as an AppImage, `app.getPath('exe')` points at the *mounted, temporary* copy
+ *  under /tmp/.mountXXXXXX/..., which changes every launch - AppImage's own runtime sets
+ *  $APPIMAGE to the real, stable .AppImage path, so prefer that when it's set. Otherwise
+ *  (a .deb/.rpm/AUR install on PATH, or running unpackaged in dev) the resolved executable
+ *  path is already correct and stable as-is. */
+function getInvocationCommand(): string {
+  return process.env.APPIMAGE || app.getPath('exe')
 }
 
 function persistedSounds(): Sound[] {
@@ -406,9 +418,12 @@ function registerIpcHandlers(): void {
     return fs.readFile(filePath)
   })
 
-  ipcMain.handle('app:getExecPath', () => app.getPath('exe'))
+  ipcMain.handle('app:getExecPath', () => getInvocationCommand())
   ipcMain.handle('app:getCapabilities', () => ({ globalShortcuts: globalShortcutsSupported }))
   ipcMain.handle('app:openSoundsFolder', () => shell.openPath(getSoundsDir()))
+  ipcMain.handle('app:copyToClipboard', (_e, text: string) => {
+    clipboard.writeText(text)
+  })
 }
 
 let quitting = false

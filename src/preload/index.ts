@@ -57,6 +57,7 @@ const api = {
     getCapabilities: (): Promise<{ globalShortcuts: boolean }> =>
       ipcRenderer.invoke('app:getCapabilities'),
     openSoundsFolder: (): Promise<void> => ipcRenderer.invoke('app:openSoundsFolder'),
+    copyToClipboard: (text: string): Promise<void> => ipcRenderer.invoke('app:copyToClipboard', text),
     onPlayRequested: (callback: (soundId: string) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, soundId: string): void => callback(soundId)
       ipcRenderer.on('sounds:playRequested', listener)

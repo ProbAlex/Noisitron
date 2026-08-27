@@ -1,0 +1,40 @@
+name: Release
+
+# Builds the Linux installers (AppImage, .deb, .rpm) and attaches them to a
+# GitHub Release. Runs on ubuntu-latest specifically because the rpm/deb
+# packaging toolchain electron-builder bundles (fpm) is only compatible with
+# the older rpmbuild shipped by that image - newer rpmbuild (as found on
+# rolling-release distros) fails with a buildroot path mismatch.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build and publish Linux packages
+        run: |
+          npx electron-vite build
+          npx electron-builder --linux AppImage deb rpm --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
