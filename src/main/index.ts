@@ -9,7 +9,7 @@ import {
   clipboard
 } from 'electron'
 import { join, extname, basename } from 'path'
-import { promises as fs } from 'fs'
+import { promises as fs, watch as watchFs, type FSWatcher } from 'fs'
 import { randomUUID } from 'crypto'
 import Store from 'electron-store'
 import * as audio from './audio'
@@ -210,6 +210,55 @@ async function syncAllFolders(): Promise<void> {
   }
 }
 
+const folderWatchers = new Map<string, FSWatcher>()
+const folderSyncDebounce = new Map<string, ReturnType<typeof setTimeout>>()
+
+function notifyLibraryChanged(): void {
+  mainWindow?.webContents.send('library:changed', {
+    sounds: persistedSounds(),
+    folders: persistedFolders()
+  })
+}
+
+/** Live-syncs a folder: any change in its source directory (file added, removed, renamed)
+ *  triggers a debounced re-sync while the app is running, no relaunch needed. inotify (via
+ *  fs.watch) can fire several events for a single filesystem operation, hence the debounce. */
+function watchFolder(folder: Folder): void {
+  if (!folder.sourcePath) return
+  unwatchFolder(folder.id)
+  try {
+    const watcher = watchFs(folder.sourcePath, { persistent: true }, () => {
+      const existing = folderSyncDebounce.get(folder.id)
+      if (existing) clearTimeout(existing)
+      folderSyncDebounce.set(
+        folder.id,
+        setTimeout(() => {
+          folderSyncDebounce.delete(folder.id)
+          syncFolder(folder.id)
+            .then(() => notifyLibraryChanged())
+            .catch(() => {})
+        }, 500)
+      )
+    })
+    watcher.on('error', () => unwatchFolder(folder.id))
+    folderWatchers.set(folder.id, watcher)
+  } catch {
+    // Source directory may be missing/unmounted/inaccessible - just skip watching it.
+  }
+}
+
+function unwatchFolder(folderId: string): void {
+  folderWatchers.get(folderId)?.close()
+  folderWatchers.delete(folderId)
+  const timer = folderSyncDebounce.get(folderId)
+  if (timer) clearTimeout(timer)
+  folderSyncDebounce.delete(folderId)
+}
+
+function watchAllFolders(): void {
+  for (const folder of persistedFolders()) watchFolder(folder)
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     title: 'Noisitron',
@@ -298,6 +347,7 @@ function registerIpcHandlers(): void {
     const folder: Folder = { id: randomUUID(), name: basename(dirPath), sourcePath: dirPath }
     folders.push(folder)
     store.set('folders', folders)
+    watchFolder(folder)
 
     const sounds = await copySoundFilesIntoLibrary(filePaths, folder.id)
     syncShortcuts()
@@ -318,6 +368,7 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('folders:remove', (_e, id: string) => {
+    unwatchFolder(id)
     const folders = persistedFolders().filter((f) => f.id !== id)
     store.set('folders', folders)
     const sounds = persistedSounds().map((s) => (s.folderId === id ? { ...s, folderId: null } : s))
@@ -509,6 +560,7 @@ app.on('before-quit', (e) => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  for (const id of [...folderWatchers.keys()]) unwatchFolder(id)
 })
 
 app.whenReady().then(async () => {
@@ -538,6 +590,7 @@ app.whenReady().then(async () => {
   await fs.mkdir(getIconsDir(), { recursive: true })
   await audio.cleanupStaleModules().catch(() => {})
   await syncAllFolders()
+  watchAllFolders()
 
   // The app requests mic access purely so navigator.mediaDevices.enumerateDevices()
   // returns real device labels (needed to match a device against the virtual sink

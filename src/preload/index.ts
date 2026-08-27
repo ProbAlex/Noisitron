@@ -66,6 +66,14 @@ const api = {
       const listener = (_event: Electron.IpcRendererEvent, soundId: string): void => callback(soundId)
       ipcRenderer.on('sounds:playRequested', listener)
       return () => ipcRenderer.removeListener('sounds:playRequested', listener)
+    },
+    onLibraryChanged: (callback: (data: { sounds: Sound[]; folders: Folder[] }) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: { sounds: Sound[]; folders: Folder[] }
+      ): void => callback(data)
+      ipcRenderer.on('library:changed', listener)
+      return () => ipcRenderer.removeListener('library:changed', listener)
     }
   }
 }

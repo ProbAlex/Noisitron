@@ -112,6 +112,9 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
       if (sound) void get().playSound(sound)
     })
 
+    // Pushed whenever a live-watched folder picks up changes on disk (no relaunch needed).
+    window.api.app.onLibraryChanged(({ sounds, folders }) => set({ sounds, folders }))
+
     soundPlayer.setActiveChangeListener((ids) => set({ activeSoundIds: ids }))
 
     try {

@@ -2,11 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSoundboardStore } from '../store/soundboard'
 import { VolumeSlider } from './VolumeSlider'
 import { KeybindRecorder } from './KeybindRecorder'
-
-const QUICK_EMOJI = [
-  '😂', '🔥', '💀', '🎉', '🚨', '📢', '🐍', '📯', '🥁', '🎶',
-  '🔔', '⚡', '🎯', '👻', '🤖', '💥', '🧨', '🐸', '🦆', '🎮'
-]
+import { EmojiPicker } from './EmojiPicker'
 
 export function SoundEditMenu() {
   const contextMenu = useSoundboardStore((s) => s.contextMenu)
@@ -28,13 +24,13 @@ export function SoundEditMenu() {
   const panelRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const [draftName, setDraftName] = useState(sound?.name ?? '')
-  const [customEmoji, setCustomEmoji] = useState('')
   const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [emojiPickerAnchor, setEmojiPickerAnchor] = useState<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     setDraftName(sound?.name ?? '')
-    setCustomEmoji('')
     setConfirmingRemove(false)
+    setEmojiPickerAnchor(null)
   }, [sound?.id])
 
   useEffect(() => {
@@ -71,12 +67,6 @@ export function SoundEditMenu() {
     if (trimmed && trimmed !== sound!.name) renameSound(sound!.id, trimmed)
   }
 
-  function commitCustomEmoji(): void {
-    const trimmed = customEmoji.trim()
-    if (trimmed) void setSoundEmoji(sound!.id, trimmed)
-    setCustomEmoji('')
-  }
-
   return (
     <div className="fixed inset-0 z-30" onClick={closeSoundMenu}>
       <div
@@ -96,28 +86,21 @@ export function SoundEditMenu() {
 
         <div className="flex flex-col gap-2">
           <span className="text-xs font-medium text-slate-400">Icon</span>
-          <div className="grid grid-cols-10 gap-1">
-            {QUICK_EMOJI.map((emoji) => (
-              <button
-                key={emoji}
-                onClick={() => void setSoundEmoji(sound!.id, emoji)}
-                className={`flex h-6 w-6 items-center justify-center rounded text-base transition-colors hover:bg-base-700 ${
-                  sound!.emoji === emoji ? 'bg-accent-soft ring-1 ring-accent' : ''
-                }`}
-              >
-                {emoji}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-base-600 bg-base-950 text-xl">
+              {sound.emoji ?? (sound.imagePath ? '🖼' : '·')}
+            </div>
+            <button
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setEmojiPickerAnchor((prev) => (prev ? null : { x: rect.left, y: rect.bottom + 6 }))
+              }}
+              className="flex-1 rounded-lg border border-base-600 px-2 py-1.5 text-xs font-medium text-slate-300 hover:border-base-500 hover:text-slate-100"
+            >
+              Choose emoji
+            </button>
           </div>
           <div className="flex items-center gap-1.5">
-            <input
-              value={customEmoji}
-              onChange={(e) => setCustomEmoji(e.target.value)}
-              onBlur={commitCustomEmoji}
-              onKeyDown={(e) => e.key === 'Enter' && commitCustomEmoji()}
-              placeholder="Custom emoji"
-              className="w-24 rounded-lg border border-base-600 bg-base-950 px-2 py-1 text-center text-sm text-slate-100 outline-none focus:border-accent"
-            />
             <button
               onClick={() => void pickSoundImage(sound!.id)}
               className="flex-1 rounded-lg border border-base-600 px-2 py-1 text-xs font-medium text-slate-300 hover:border-base-500 hover:text-slate-100"
@@ -133,6 +116,16 @@ export function SoundEditMenu() {
             </button>
           </div>
         </div>
+
+        {emojiPickerAnchor && (
+          <EmojiPicker
+            value={sound.emoji}
+            anchorX={emojiPickerAnchor.x}
+            anchorY={emojiPickerAnchor.y}
+            onSelect={(emoji) => void setSoundEmoji(sound!.id, emoji)}
+            onClose={() => setEmojiPickerAnchor(null)}
+          />
+        )}
 
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-slate-400">Volume</span>
