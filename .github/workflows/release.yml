@@ -32,9 +32,23 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Build and publish Linux packages
+      - name: Build Linux packages
         run: |
           npx electron-vite build
-          npx electron-builder --linux AppImage deb rpm --publish always
+          npx electron-builder --linux AppImage deb rpm
+
+      # electron-builder has no concept of the AppImageUpdate/GearLever update-info
+      # convention, so the AppImage it produces isn't discoverable by those tools.
+      # This re-packages it in place (same filename) with that info embedded, plus
+      # the accompanying .zsync sidecar - see the script for details.
+      - name: Embed AppImage update information
+        run: bash scripts/embed-appimage-update-info.sh
+
+      - name: Publish release (draft)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          gh release create "v$VERSION" \
+            dist/*.AppImage dist/*.AppImage.zsync dist/*.deb dist/*.rpm \
+            --title "$VERSION" --generate-notes --draft

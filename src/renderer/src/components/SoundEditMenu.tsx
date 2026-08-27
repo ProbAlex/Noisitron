@@ -23,6 +23,7 @@ export function SoundEditMenu() {
   const setSoundKeybind = useSoundboardStore((s) => s.setSoundKeybind)
   const setSoundFolder = useSoundboardStore((s) => s.setSoundFolder)
   const removeSound = useSoundboardStore((s) => s.removeSound)
+  const openTrimEditor = useSoundboardStore((s) => s.openTrimEditor)
 
   const panelRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
@@ -137,6 +138,13 @@ export function SoundEditMenu() {
           <span className="text-xs font-medium text-slate-400">Volume</span>
           <VolumeSlider value={sound.volume} onChange={(v) => setSoundVolume(sound!.id, v)} />
         </div>
+
+        <button
+          onClick={() => openTrimEditor(sound!.id)}
+          className="rounded-lg border border-base-600 px-3 py-1.5 text-sm font-medium text-slate-300 hover:border-base-500 hover:text-slate-100"
+        >
+          ✂ Trim sound
+        </button>
 
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-slate-400">Keybind</span>

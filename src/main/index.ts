@@ -57,10 +57,20 @@ function migrateSounds(): void {
     emoji: null,
     imagePath: null,
     keybind: null,
+    sourcePath: null,
     ...(s as Partial<Sound>)
   })) as Sound[]
   store.set('sounds', sounds)
-  if (!store.has('folders')) store.set('folders', [])
+
+  if (!store.has('folders')) {
+    store.set('folders', [])
+  } else {
+    const folders = store.get('folders').map((f) => ({
+      sourcePath: null,
+      ...(f as Partial<Folder>)
+    })) as Folder[]
+    store.set('folders', folders)
+  }
 }
 
 function sendPlayRequest(soundId: string): void {
@@ -158,11 +168,46 @@ async function copySoundFilesIntoLibrary(paths: string[], folderId: string | nul
       folderId,
       emoji: null,
       imagePath: null,
-      keybind: null
+      keybind: null,
+      sourcePath: srcPath
     })
   }
   store.set('sounds', sounds)
   return sounds
+}
+
+/** Audio files directly inside a directory (non-recursive), matching the import filter. */
+async function listAudioFilesIn(dirPath: string): Promise<string[]> {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true })
+  return entries
+    .filter((e) => e.isFile())
+    .map((e) => join(dirPath, e.name))
+    .filter((p) => ALLOWED_EXTENSIONS.includes(extname(p).slice(1).toLowerCase()))
+}
+
+/** Copies in any file from a folder's source directory not already represented by an
+ *  existing sound's sourcePath. Additive only - never removes a sound whose source file
+ *  disappeared, since the same folder may be shared/edited outside the app. */
+async function syncFolder(folderId: string): Promise<Sound[]> {
+  const folder = persistedFolders().find((f) => f.id === folderId)
+  if (!folder?.sourcePath) return persistedSounds()
+
+  const candidates = await listAudioFilesIn(folder.sourcePath).catch(() => [])
+  const known = new Set(persistedSounds().map((s) => s.sourcePath).filter(Boolean))
+  const newPaths = candidates.filter((p) => !known.has(p))
+  if (newPaths.length === 0) return persistedSounds()
+
+  const sounds = await copySoundFilesIntoLibrary(newPaths, folderId)
+  syncShortcuts()
+  return sounds
+}
+
+/** Re-syncs every folder that has a known source directory. Called once at startup so
+ *  simply reopening the app picks up files added to a source folder since last run. */
+async function syncAllFolders(): Promise<void> {
+  for (const folder of persistedFolders()) {
+    if (folder.sourcePath) await syncFolder(folder.id).catch(() => {})
+  }
 }
 
 function createWindow(): void {
@@ -247,20 +292,21 @@ function registerIpcHandlers(): void {
     }
 
     const dirPath = result.filePaths[0]
-    const entries = await fs.readdir(dirPath, { withFileTypes: true })
-    const filePaths = entries
-      .filter((e) => e.isFile())
-      .map((e) => join(dirPath, e.name))
-      .filter((p) => ALLOWED_EXTENSIONS.includes(extname(p).slice(1).toLowerCase()))
+    const filePaths = await listAudioFilesIn(dirPath)
 
     const folders = persistedFolders()
-    const folder: Folder = { id: randomUUID(), name: basename(dirPath) }
+    const folder: Folder = { id: randomUUID(), name: basename(dirPath), sourcePath: dirPath }
     folders.push(folder)
     store.set('folders', folders)
 
     const sounds = await copySoundFilesIntoLibrary(filePaths, folder.id)
     syncShortcuts()
     return { sounds, folders }
+  })
+
+  ipcMain.handle('folders:sync', async (_e, id: string) => {
+    const sounds = await syncFolder(id)
+    return { sounds, folders: persistedFolders() }
   })
 
   ipcMain.handle('folders:rename', (_e, id: string, name: string) => {
@@ -305,6 +351,23 @@ function registerIpcHandlers(): void {
     const target = sounds.find((s) => s.id === id)
     if (target) target.volume = volume
     store.set('sounds', sounds)
+    return sounds
+  })
+
+  ipcMain.handle('sounds:trim', async (_e, id: string, bytes: Uint8Array) => {
+    const sounds = persistedSounds()
+    const target = sounds.find((s) => s.id === id)
+    if (!target) return sounds
+
+    const newPath = join(getSoundsDir(), `${randomUUID()}.wav`)
+    await fs.writeFile(newPath, bytes)
+
+    const oldPath = target.filePath
+    target.filePath = newPath
+    target.ext = 'wav'
+    store.set('sounds', sounds)
+
+    await fs.unlink(oldPath).catch(() => {})
     return sounds
   })
 
@@ -474,6 +537,7 @@ app.whenReady().then(async () => {
   await fs.mkdir(getSoundsDir(), { recursive: true })
   await fs.mkdir(getIconsDir(), { recursive: true })
   await audio.cleanupStaleModules().catch(() => {})
+  await syncAllFolders()
 
   // The app requests mic access purely so navigator.mediaDevices.enumerateDevices()
   // returns real device labels (needed to match a device against the virtual sink

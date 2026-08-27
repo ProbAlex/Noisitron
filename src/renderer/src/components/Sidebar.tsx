@@ -7,9 +7,11 @@ function FolderRow({ folder, count }: { folder: Folder; count: number }) {
   const selectFolder = useSoundboardStore((s) => s.selectFolder)
   const renameFolder = useSoundboardStore((s) => s.renameFolder)
   const removeFolder = useSoundboardStore((s) => s.removeFolder)
+  const syncFolder = useSoundboardStore((s) => s.syncFolder)
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(folder.name)
+  const [syncing, setSyncing] = useState(false)
   const selected = selectedFolderId === folder.id
 
   function commit(): void {
@@ -56,6 +58,21 @@ function FolderRow({ folder, count }: { folder: Folder; count: number }) {
         </span>
       )}
       <span className="text-xs tabular-nums text-slate-500">{count}</span>
+      {folder.sourcePath && (
+        <button
+          onClick={async (e) => {
+            e.stopPropagation()
+            setSyncing(true)
+            await syncFolder(folder.id)
+            setSyncing(false)
+          }}
+          disabled={syncing}
+          title="Sync: pull in files added to the source folder since it was imported"
+          className={`hidden h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] text-slate-500 hover:bg-base-700 hover:text-slate-200 group-hover:flex ${syncing ? 'flex animate-spin' : ''}`}
+        >
+          ⟳
+        </button>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation()

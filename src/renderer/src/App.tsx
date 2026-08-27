@@ -6,6 +6,7 @@ import { GlobalVolumeBar } from './components/GlobalVolumeBar'
 import { StatusBadge } from './components/StatusBadge'
 import { SettingsModal } from './components/SettingsModal'
 import { SoundEditMenu } from './components/SoundEditMenu'
+import { TrimEditor } from './components/TrimEditor'
 
 function App() {
   const ready = useSoundboardStore((s) => s.ready)
@@ -76,6 +77,7 @@ function App() {
       </div>
 
       <SoundEditMenu />
+      <TrimEditor />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   )

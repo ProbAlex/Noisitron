@@ -44,13 +44,17 @@ const api = {
     readFile: (filePath: string): Promise<Uint8Array> =>
       ipcRenderer.invoke('sounds:readFile', filePath),
     readIcon: (filePath: string): Promise<Uint8Array> =>
-      ipcRenderer.invoke('sounds:readIcon', filePath)
+      ipcRenderer.invoke('sounds:readIcon', filePath),
+    trim: (id: string, bytes: Uint8Array): Promise<Sound[]> =>
+      ipcRenderer.invoke('sounds:trim', id, bytes)
   },
   folders: {
     rename: (id: string, name: string): Promise<Folder[]> =>
       ipcRenderer.invoke('folders:rename', id, name),
     remove: (id: string): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
-      ipcRenderer.invoke('folders:remove', id)
+      ipcRenderer.invoke('folders:remove', id),
+    sync: (id: string): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
+      ipcRenderer.invoke('folders:sync', id)
   },
   app: {
     getExecPath: (): Promise<string> => ipcRenderer.invoke('app:getExecPath'),

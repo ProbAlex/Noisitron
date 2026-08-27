@@ -31,6 +31,11 @@ interface SoundboardState {
   openSoundMenu: (soundId: string, x: number, y: number) => void
   closeSoundMenu: () => void
 
+  trimSoundId: string | null
+  openTrimEditor: (soundId: string) => void
+  closeTrimEditor: () => void
+  saveTrim: (id: string, bytes: Uint8Array) => Promise<void>
+
   init: () => Promise<void>
   refreshRouting: () => Promise<void>
   refreshDevices: () => Promise<void>
@@ -49,6 +54,7 @@ interface SoundboardState {
 
   renameFolder: (id: string, name: string) => Promise<void>
   removeFolder: (id: string) => Promise<void>
+  syncFolder: (id: string) => Promise<void>
   selectFolder: (id: string | null) => void
 
   playSound: (sound: Sound) => Promise<void>
@@ -85,6 +91,17 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   contextMenu: null,
   openSoundMenu: (soundId, x, y) => set({ contextMenu: { soundId, x, y } }),
   closeSoundMenu: () => set({ contextMenu: null }),
+
+  trimSoundId: null,
+  openTrimEditor: (soundId) => {
+    get().stopSound(soundId)
+    set({ trimSoundId: soundId, contextMenu: null })
+  },
+  closeTrimEditor: () => set({ trimSoundId: null }),
+  saveTrim: async (id, bytes) => {
+    const sounds = await window.api.sounds.trim(id, bytes)
+    set({ sounds, trimSoundId: null })
+  },
 
   init: async () => {
     // Registered first (synchronously, before any await below) so it's already
@@ -255,6 +272,11 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
       folders,
       selectedFolderId: state.selectedFolderId === id ? null : state.selectedFolderId
     }))
+  },
+
+  syncFolder: async (id) => {
+    const { sounds, folders } = await window.api.folders.sync(id)
+    set({ sounds, folders })
   },
 
   selectFolder: (id) => set({ selectedFolderId: id }),

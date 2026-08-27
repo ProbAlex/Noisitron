@@ -38,11 +38,18 @@ export interface Sound {
   imagePath: string | null
   /** Electron accelerator string (e.g. "Control+Alt+F1") that triggers this sound system-wide */
   keybind: string | null
+  /** absolute path of the original file this was copied from, if imported via a folder or
+   *  file picker; used to detect "already imported" when re-syncing a folder. Null for sounds
+   *  that predate this field. */
+  sourcePath: string | null
 }
 
 export interface Folder {
   id: string
   name: string
+  /** absolute path of the directory this folder was imported from, if any; re-syncing
+   *  requires this. Null for folders that predate this field. */
+  sourcePath: string | null
 }
 
 export interface Settings {
