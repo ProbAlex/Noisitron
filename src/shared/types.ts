@@ -1,7 +1,7 @@
 /** device.description set on the null-sink; used by the renderer to match it
  *  against navigator.mediaDevices output labels so it can be selected as a
  *  Web Audio / <audio> sink target. */
-export const VIRTUAL_MIC_SINK_DESCRIPTION = 'Soundboard_Virtual_Mic'
+export const VIRTUAL_MIC_SINK_DESCRIPTION = 'Noisitron_Virtual_Mic'
 
 export interface AudioDevice {
   /** pactl/pipewire node name, e.g. alsa_input.pci-..._Mic1__source */
@@ -30,10 +30,24 @@ export interface Sound {
   ext: string
   /** 0 - 1.5, per-sound gain applied on top of the global bus volumes */
   volume: number
+  /** id of the Folder this sound is grouped under, or null for ungrouped */
+  folderId: string | null
+  /** emoji shown on the tile; mutually exclusive with imagePath */
+  emoji: string | null
+  /** absolute path under userData/icons to a custom thumbnail; mutually exclusive with emoji */
+  imagePath: string | null
+  /** Electron accelerator string (e.g. "Control+Alt+F1") that triggers this sound system-wide */
+  keybind: string | null
+}
+
+export interface Folder {
+  id: string
+  name: string
 }
 
 export interface Settings {
   sounds: Sound[]
+  folders: Folder[]
   micSourceName: string | null
   headphoneSinkName: string | null
   globalMicVolume: number
@@ -42,6 +56,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   sounds: [],
+  folders: [],
   micSourceName: null,
   headphoneSinkName: null,
   globalMicVolume: 1,
@@ -52,4 +67,9 @@ export interface ImportedSoundFile {
   filePath: string
   name: string
   ext: string
+}
+
+export interface SetKeybindResult {
+  sounds: Sound[]
+  error?: string
 }

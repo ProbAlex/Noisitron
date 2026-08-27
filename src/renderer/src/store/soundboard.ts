@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AudioDevice, Sound, VirtualMicStatus } from '@shared/types'
+import type { AudioDevice, Folder, Sound, VirtualMicStatus } from '@shared/types'
 import { VIRTUAL_MIC_SINK_DESCRIPTION } from '@shared/types'
 import { soundPlayer } from '../audio/player'
 import { findOutputDeviceId } from '../audio/deviceMatch'
@@ -11,6 +11,9 @@ interface SoundboardState {
   errorMessage: string | null
 
   sounds: Sound[]
+  folders: Folder[]
+  selectedFolderId: string | null
+
   sourceDevices: AudioDevice[]
   sinkDevices: AudioDevice[]
 
@@ -22,14 +25,31 @@ interface SoundboardState {
   micStatus: VirtualMicStatus | null
   activeSoundIds: Set<string>
 
+  globalShortcutsSupported: boolean
+
+  contextMenu: { soundId: string; x: number; y: number } | null
+  openSoundMenu: (soundId: string, x: number, y: number) => void
+  closeSoundMenu: () => void
+
   init: () => Promise<void>
   refreshRouting: () => Promise<void>
+  refreshDevices: () => Promise<void>
   reconnectVirtualMic: () => Promise<void>
 
   importSounds: () => Promise<void>
+  importFolder: () => Promise<void>
   removeSound: (id: string) => Promise<void>
   setSoundVolume: (id: string, volume: number) => void
   renameSound: (id: string, name: string) => void
+  setSoundFolder: (id: string, folderId: string | null) => Promise<void>
+  setSoundEmoji: (id: string, emoji: string | null) => Promise<void>
+  pickSoundImage: (id: string) => Promise<void>
+  clearSoundIcon: (id: string) => Promise<void>
+  setSoundKeybind: (id: string, accelerator: string | null) => Promise<{ ok: boolean; error?: string }>
+
+  renameFolder: (id: string, name: string) => Promise<void>
+  removeFolder: (id: string) => Promise<void>
+  selectFolder: (id: string | null) => void
 
   playSound: (sound: Sound) => Promise<void>
   stopSound: (id: string) => void
@@ -46,6 +66,9 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   errorMessage: null,
 
   sounds: [],
+  folders: [],
+  selectedFolderId: null,
+
   sourceDevices: [],
   sinkDevices: [],
 
@@ -57,7 +80,21 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   micStatus: null,
   activeSoundIds: new Set(),
 
+  globalShortcutsSupported: true,
+
+  contextMenu: null,
+  openSoundMenu: (soundId, x, y) => set({ contextMenu: { soundId, x, y } }),
+  closeSoundMenu: () => set({ contextMenu: null }),
+
   init: async () => {
+    // Registered first (synchronously, before any await below) so it's already
+    // listening by the time the main process flushes a queued Stream Deck / hotkey
+    // play request on did-finish-load.
+    window.api.app.onPlayRequested((soundId) => {
+      const sound = get().sounds.find((s) => s.id === soundId)
+      if (sound) void get().playSound(sound)
+    })
+
     soundPlayer.setActiveChangeListener((ids) => set({ activeSoundIds: ids }))
 
     try {
@@ -69,13 +106,14 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
     }
 
     navigator.mediaDevices.addEventListener('devicechange', () => {
-      get().refreshRouting()
+      void get().refreshDevices()
     })
 
-    const [settings, sourceDevices, sinkDevices] = await Promise.all([
+    const [settings, sourceDevices, sinkDevices, capabilities] = await Promise.all([
       window.api.settings.get(),
       window.api.devices.listSources(),
-      window.api.devices.listSinks()
+      window.api.devices.listSinks(),
+      window.api.app.getCapabilities()
     ])
 
     soundPlayer.setGlobalMicVolume(settings.globalMicVolume)
@@ -83,12 +121,14 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
 
     set({
       sounds: settings.sounds,
+      folders: settings.folders,
       micSourceName: settings.micSourceName,
       headphoneSinkName: settings.headphoneSinkName,
       globalMicVolume: settings.globalMicVolume,
       globalHeadphoneVolume: settings.globalHeadphoneVolume,
       sourceDevices,
-      sinkDevices
+      sinkDevices,
+      globalShortcutsSupported: capabilities.globalShortcuts
     })
 
     await get().reconnectVirtualMic()
@@ -105,6 +145,15 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
     const headphoneDesc = sinkDevices.find((d) => d.name === headphoneSinkName)?.description ?? null
     const headphoneId = findOutputDeviceId(devices, headphoneDesc)
     soundPlayer.setHeadphoneSinkDeviceId(headphoneId)
+  },
+
+  refreshDevices: async () => {
+    const [sourceDevices, sinkDevices] = await Promise.all([
+      window.api.devices.listSources(),
+      window.api.devices.listSinks()
+    ])
+    set({ sourceDevices, sinkDevices })
+    await get().refreshRouting()
   },
 
   reconnectVirtualMic: async () => {
@@ -125,6 +174,11 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   importSounds: async () => {
     const sounds = await window.api.sounds.import()
     set({ sounds })
+  },
+
+  importFolder: async () => {
+    const { sounds, folders } = await window.api.sounds.importFolder()
+    set({ sounds, folders })
   },
 
   removeSound: async (id) => {
@@ -154,7 +208,56 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
     set((state) => ({
       sounds: state.sounds.map((s) => (s.id === id ? { ...s, name } : s))
     }))
+    window.api.sounds.rename(id, name).then((sounds) => set({ sounds }))
   },
+
+  setSoundFolder: async (id, folderId) => {
+    set((state) => ({
+      sounds: state.sounds.map((s) => (s.id === id ? { ...s, folderId } : s))
+    }))
+    const sounds = await window.api.sounds.setFolder(id, folderId)
+    set({ sounds })
+  },
+
+  setSoundEmoji: async (id, emoji) => {
+    const sounds = await window.api.sounds.setEmoji(id, emoji)
+    set({ sounds })
+  },
+
+  pickSoundImage: async (id) => {
+    const sounds = await window.api.sounds.pickImage(id)
+    set({ sounds })
+  },
+
+  clearSoundIcon: async (id) => {
+    const sounds = await window.api.sounds.clearIcon(id)
+    set({ sounds })
+  },
+
+  setSoundKeybind: async (id, accelerator) => {
+    const result = await window.api.sounds.setKeybind(id, accelerator)
+    set({ sounds: result.sounds })
+    return { ok: !result.error, error: result.error }
+  },
+
+  renameFolder: async (id, name) => {
+    set((state) => ({
+      folders: state.folders.map((f) => (f.id === id ? { ...f, name } : f))
+    }))
+    const folders = await window.api.folders.rename(id, name)
+    set({ folders })
+  },
+
+  removeFolder: async (id) => {
+    const { sounds, folders } = await window.api.folders.remove(id)
+    set((state) => ({
+      sounds,
+      folders,
+      selectedFolderId: state.selectedFolderId === id ? null : state.selectedFolderId
+    }))
+  },
+
+  selectFolder: (id) => set({ selectedFolderId: id }),
 
   playSound: async (sound) => {
     await soundPlayer.play(sound)

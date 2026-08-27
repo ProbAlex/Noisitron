@@ -8,7 +8,7 @@ import { VIRTUAL_MIC_SINK_DESCRIPTION, type AudioDevice, type VirtualMicStatus }
  * lets this run unmodified regardless of which sound server owns the box.
  */
 
-export const VIRTUAL_SINK_NAME = 'soundboard_mic'
+export const VIRTUAL_SINK_NAME = 'noisitron_mic'
 export const VIRTUAL_MONITOR_NAME = `${VIRTUAL_SINK_NAME}.monitor`
 export const VIRTUAL_SOURCE_NAME = `${VIRTUAL_SINK_NAME}.mic`
 

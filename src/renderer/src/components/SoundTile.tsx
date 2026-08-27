@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Sound } from '@shared/types'
 import { useSoundboardStore } from '../store/soundboard'
-import { VolumeSlider } from './VolumeSlider'
+import { getIconObjectUrl } from '../utils/iconUrl'
+import { formatAccelerator } from '../utils/accelerator'
 
 interface SoundTileProps {
   sound: Sound
@@ -11,12 +12,26 @@ interface SoundTileProps {
 export function SoundTile({ sound, playing }: SoundTileProps) {
   const playSound = useSoundboardStore((s) => s.playSound)
   const stopSound = useSoundboardStore((s) => s.stopSound)
-  const setSoundVolume = useSoundboardStore((s) => s.setSoundVolume)
-  const removeSound = useSoundboardStore((s) => s.removeSound)
   const renameSound = useSoundboardStore((s) => s.renameSound)
+  const openSoundMenu = useSoundboardStore((s) => s.openSoundMenu)
 
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(sound.name)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    if (sound.imagePath) {
+      void getIconObjectUrl(sound.imagePath).then((url) => {
+        if (!cancelled) setImageUrl(url)
+      })
+    } else {
+      setImageUrl(null)
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [sound.imagePath])
 
   function toggle(): void {
     if (playing) stopSound(sound.id)
@@ -32,68 +47,70 @@ export function SoundTile({ sound, playing }: SoundTileProps) {
 
   return (
     <div
-      className={`group relative flex flex-col gap-3 rounded-2xl border p-4 transition-colors ${
+      onContextMenu={(e) => {
+        e.preventDefault()
+        openSoundMenu(sound.id, e.clientX, e.clientY)
+      }}
+      className={`group relative flex flex-col items-center gap-2.5 rounded-2xl border p-4 pt-5 text-center transition-all duration-150 ${
         playing
-          ? 'border-accent bg-accent-soft/60 shadow-[0_0_0_1px_theme(colors.accent.DEFAULT)]'
-          : 'border-base-700 bg-base-850 hover:border-base-600 hover:bg-base-800'
+          ? 'border-accent bg-accent-soft/50 shadow-[0_0_0_1px_theme(colors.accent.DEFAULT),0_10px_28px_-10px_theme(colors.accent.DEFAULT)]'
+          : 'border-base-700 bg-base-850 hover:-translate-y-0.5 hover:border-base-600 hover:bg-base-800 hover:shadow-lg hover:shadow-black/20'
       }`}
     >
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          void removeSound(sound.id)
-        }}
-        title="Remove sound"
-        className="absolute right-2 top-2 hidden h-6 w-6 items-center justify-center rounded-full bg-base-700 text-xs text-slate-300 hover:bg-red-500/80 hover:text-white group-hover:flex"
-      >
-        ×
-      </button>
+      {sound.keybind && (
+        <span
+          title={`Shortcut: ${formatAccelerator(sound.keybind)}`}
+          className="absolute left-2 top-2 rounded-md border border-base-600 bg-base-950/80 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-400"
+        >
+          {formatAccelerator(sound.keybind)}
+        </span>
+      )}
 
-      <button onClick={toggle} className="flex flex-col items-center gap-2 pt-1 text-center">
-        <div
-          className={`flex h-12 w-12 items-center justify-center rounded-full text-lg ${
-            playing ? 'bg-accent text-white' : 'bg-base-700 text-slate-200'
+      <button
+        onClick={toggle}
+        title="Click to play/stop · Right-click for options"
+        className={`relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl text-3xl transition-transform active:scale-95 ${
+          playing ? 'scale-105 bg-accent/20' : 'bg-base-700/70'
+        }`}
+      >
+        {imageUrl ? (
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span>{sound.emoji ?? '🎵'}</span>
+        )}
+        <span
+          className={`absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] shadow ${
+            playing ? 'bg-accent text-white' : 'bg-base-950/80 text-slate-300'
           }`}
         >
           {playing ? '■' : '▶'}
-        </div>
-        {editing ? (
-          <input
-            autoFocus
-            value={draftName}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => setDraftName(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename()
-              if (e.key === 'Escape') {
-                setDraftName(sound.name)
-                setEditing(false)
-              }
-            }}
-            className="w-full rounded bg-base-950 px-1.5 py-0.5 text-center text-sm text-slate-100 outline-none ring-1 ring-accent"
-          />
-        ) : (
-          <span
-            onDoubleClick={(e) => {
-              e.stopPropagation()
-              setEditing(true)
-            }}
-            className="line-clamp-2 w-full text-sm font-medium text-slate-200"
-            title="Double-click to rename"
-          >
-            {sound.name}
-          </span>
-        )}
+        </span>
       </button>
 
-      <div onClick={(e) => e.stopPropagation()}>
-        <VolumeSlider
-          compact
-          value={sound.volume}
-          onChange={(v) => setSoundVolume(sound.id, v)}
+      {editing ? (
+        <input
+          autoFocus
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename()
+            if (e.key === 'Escape') {
+              setDraftName(sound.name)
+              setEditing(false)
+            }
+          }}
+          className="w-full rounded bg-base-950 px-1.5 py-0.5 text-center text-sm text-slate-100 outline-none ring-1 ring-accent"
         />
-      </div>
+      ) : (
+        <span
+          onDoubleClick={() => setEditing(true)}
+          className="line-clamp-2 w-full text-sm font-medium text-slate-200"
+          title="Double-click to rename · Right-click to edit"
+        >
+          {sound.name}
+        </span>
+      )}
     </div>
   )
 }

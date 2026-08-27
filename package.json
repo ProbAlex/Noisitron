@@ -1,7 +1,7 @@
 {
-  "name": "soundboard",
+  "name": "noisitron",
   "version": "0.1.0",
-  "description": "A Linux soundboard that mixes clips into a virtual microphone for Discord (and any other app) while monitoring playback through your headphones.",
+  "description": "Noisitron is a Linux soundboard that mixes clips into a virtual microphone for Discord (and any other app) while monitoring playback through your headphones.",
   "main": "./out/main/index.js",
   "author": "tippydial",
   "private": true,

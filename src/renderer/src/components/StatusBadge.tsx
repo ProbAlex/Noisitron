@@ -10,7 +10,7 @@ export function StatusBadge() {
   return (
     <div className="flex items-center gap-2 rounded-full border border-base-700 bg-base-850 px-3 py-1.5 text-xs">
       <span
-        className={`h-2 w-2 rounded-full ${active ? 'bg-emerald-400' : 'bg-red-500'}`}
+        className={`h-2 w-2 rounded-full ${active ? 'bg-emerald-400 shadow-[0_0_6px_theme(colors.emerald.400)]' : 'bg-red-500'}`}
         aria-hidden
       />
       <span className="text-slate-300">

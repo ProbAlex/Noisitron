@@ -1,5 +1,5 @@
-appId: dev.tippydial.soundboard
-productName: Soundboard
+appId: dev.tippydial.noisitron
+productName: Noisitron
 directories:
   buildResources: build
   output: dist

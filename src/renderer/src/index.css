@@ -18,6 +18,10 @@ body {
     Roboto,
     sans-serif;
   user-select: none;
+  background-image:
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(124, 92, 255, 0.14), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 100% 0%, rgba(34, 211, 238, 0.08), transparent 55%);
+  background-attachment: fixed;
 }
 
 input,
@@ -55,4 +59,17 @@ input[type='range']::-webkit-slider-thumb {
   background: theme('colors.accent.DEFAULT');
   cursor: pointer;
   border: 2px solid white;
+  transition: transform 100ms ease;
+}
+input[type='range']:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+input[type='range']:focus-visible {
+  outline: 2px solid theme('colors.accent.glow');
+  outline-offset: 2px;
+}
+
+*:focus-visible {
+  outline: 2px solid theme('colors.accent.glow');
+  outline-offset: 1px;
 }

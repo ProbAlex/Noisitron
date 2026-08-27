@@ -15,7 +15,7 @@ export function GlobalVolumeBar() {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-6 border-t border-base-700 bg-base-850 px-6 py-4">
+    <div className="flex flex-wrap items-center gap-6 border-t border-base-700 bg-base-850/80 px-6 py-4 backdrop-blur">
       <div className="min-w-[220px] flex-1">
         <VolumeSlider
           label="🎙 Soundboard → Mic"
