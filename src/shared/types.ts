@@ -50,6 +50,8 @@ export interface Folder {
   /** absolute path of the directory this folder was imported from, if any; re-syncing
    *  requires this. Null for folders that predate this field. */
   sourcePath: string | null
+  /** id of the Folder this one is nested under, or null for a top-level folder. */
+  parentId: string | null
 }
 
 export interface Settings {

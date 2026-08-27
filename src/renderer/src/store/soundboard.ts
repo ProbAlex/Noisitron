@@ -43,6 +43,7 @@ interface SoundboardState {
 
   importSounds: () => Promise<void>
   importFolder: () => Promise<void>
+  createFolder: (name: string) => Promise<void>
   removeSound: (id: string) => Promise<void>
   setSoundVolume: (id: string, volume: number) => void
   renameSound: (id: string, name: string) => void
@@ -104,9 +105,11 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   },
 
   init: async () => {
-    // Registered first (synchronously, before any await below) so it's already
-    // listening by the time the main process flushes a queued Stream Deck / hotkey
-    // play request on did-finish-load.
+    // Registered first (synchronously, before any await below) so it's already listening
+    // by the time `notifyReady()` (called at the very end, once `sounds` is actually
+    // populated - see below) tells main it's safe to flush a queued Stream Deck / hotkey
+    // play request. Flushing any earlier would deliver it before `get().sounds` has
+    // anything in it, silently dropping the request.
     window.api.app.onPlayRequested((soundId) => {
       const sound = get().sounds.find((s) => s.id === soundId)
       if (sound) void get().playSound(sound)
@@ -154,6 +157,7 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
     await get().reconnectVirtualMic()
     await get().refreshRouting()
     set({ ready: true })
+    void window.api.app.notifyReady()
   },
 
   refreshRouting: async () => {
@@ -197,8 +201,15 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   },
 
   importFolder: async () => {
-    const { sounds, folders } = await window.api.sounds.importFolder()
+    const parentId = get().selectedFolderId
+    const { sounds, folders } = await window.api.sounds.importFolder(parentId)
     set({ sounds, folders })
+  },
+
+  createFolder: async (name) => {
+    const parentId = get().selectedFolderId
+    const folders = await window.api.folders.create(name, parentId)
+    set({ folders })
   },
 
   removeSound: async (id) => {
@@ -269,11 +280,14 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   },
 
   removeFolder: async (id) => {
+    // Navigate up to the removed folder's own parent (not always root) if we were inside it -
+    // its sounds/subfolders get promoted there too, so that's where they'll actually show up.
+    const parentId = get().folders.find((f) => f.id === id)?.parentId ?? null
     const { sounds, folders } = await window.api.folders.remove(id)
     set((state) => ({
       sounds,
       folders,
-      selectedFolderId: state.selectedFolderId === id ? null : state.selectedFolderId
+      selectedFolderId: state.selectedFolderId === id ? parentId : state.selectedFolderId
     }))
   },
 

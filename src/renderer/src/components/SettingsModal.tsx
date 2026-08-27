@@ -186,6 +186,21 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             </p>
           )}
         </div>
+
+        <div className="flex flex-col gap-2 border-t border-base-700 pt-4">
+          <SectionHeading>Application</SectionHeading>
+          <p className="text-xs leading-relaxed text-slate-400">
+            Closing this window (the X button, or a window manager close shortcut) minimizes
+            Noisitron to the system tray instead of quitting — keybinds and the Stream Deck / CLI
+            trigger keep working. Use the tray icon or the button below to fully quit.
+          </p>
+          <button
+            onClick={() => void window.api.app.quit()}
+            className="self-start rounded-lg border border-base-600 px-3 py-1.5 text-xs font-medium text-slate-400 hover:border-red-400 hover:text-red-400"
+          >
+            Quit Noisitron
+          </button>
+        </div>
       </div>
     </div>
   )

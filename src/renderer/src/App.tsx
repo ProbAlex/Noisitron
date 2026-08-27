@@ -7,6 +7,7 @@ import { StatusBadge } from './components/StatusBadge'
 import { SettingsModal } from './components/SettingsModal'
 import { SoundEditMenu } from './components/SoundEditMenu'
 import { TrimEditor } from './components/TrimEditor'
+import { Breadcrumb } from './components/Breadcrumb'
 
 function App() {
   const ready = useSoundboardStore((s) => s.ready)
@@ -69,7 +70,9 @@ function App() {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto px-6 py-5">
+        <Breadcrumb />
+
+        <main className="flex-1 overflow-y-auto px-6 pb-5 pt-3">
           <SoundGrid />
         </main>
 

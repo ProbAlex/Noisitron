@@ -3,6 +3,7 @@ import { useSoundboardStore } from '../store/soundboard'
 import { VolumeSlider } from './VolumeSlider'
 import { KeybindRecorder } from './KeybindRecorder'
 import { EmojiPicker } from './EmojiPicker'
+import { folderOptions } from '../utils/folders'
 
 export function SoundEditMenu() {
   const contextMenu = useSoundboardStore((s) => s.contextMenu)
@@ -157,9 +158,9 @@ export function SoundEditMenu() {
               className="rounded-lg border border-base-600 bg-base-950 px-2 py-1.5 text-sm text-slate-200 outline-none focus:border-accent"
             >
               <option value="">No folder</option>
-              {folders.map((f) => (
+              {folderOptions(folders).map((f) => (
                 <option key={f.id} value={f.id}>
-                  {f.name}
+                  {f.label}
                 </option>
               ))}
             </select>

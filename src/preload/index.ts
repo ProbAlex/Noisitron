@@ -26,8 +26,8 @@ const api = {
   },
   sounds: {
     import: (): Promise<Sound[]> => ipcRenderer.invoke('sounds:import'),
-    importFolder: (): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
-      ipcRenderer.invoke('sounds:importFolder'),
+    importFolder: (parentId: string | null): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
+      ipcRenderer.invoke('sounds:importFolder', parentId),
     remove: (id: string): Promise<Sound[]> => ipcRenderer.invoke('sounds:remove', id),
     setVolume: (id: string, volume: number): Promise<Sound[]> =>
       ipcRenderer.invoke('sounds:setVolume', id, volume),
@@ -49,6 +49,8 @@ const api = {
       ipcRenderer.invoke('sounds:trim', id, bytes)
   },
   folders: {
+    create: (name: string, parentId: string | null): Promise<Folder[]> =>
+      ipcRenderer.invoke('folders:create', name, parentId),
     rename: (id: string, name: string): Promise<Folder[]> =>
       ipcRenderer.invoke('folders:rename', id, name),
     remove: (id: string): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
@@ -62,6 +64,8 @@ const api = {
       ipcRenderer.invoke('app:getCapabilities'),
     openSoundsFolder: (): Promise<void> => ipcRenderer.invoke('app:openSoundsFolder'),
     copyToClipboard: (text: string): Promise<void> => ipcRenderer.invoke('app:copyToClipboard', text),
+    quit: (): Promise<void> => ipcRenderer.invoke('app:quit'),
+    notifyReady: (): Promise<void> => ipcRenderer.invoke('app:notifyReady'),
     onPlayRequested: (callback: (soundId: string) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, soundId: string): void => callback(soundId)
       ipcRenderer.on('sounds:playRequested', listener)

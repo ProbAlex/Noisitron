@@ -6,7 +6,10 @@ import {
   dialog,
   session,
   globalShortcut,
-  clipboard
+  clipboard,
+  Tray,
+  Menu,
+  nativeImage
 } from 'electron'
 import { join, extname, basename } from 'path'
 import { promises as fs, watch as watchFs, type FSWatcher } from 'fs'
@@ -20,7 +23,14 @@ const ALLOWED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
 
 let store: Store<Settings>
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 let windowReady = false
+/** Set only by an explicit Quit (tray menu / Settings button). Until then, closing the
+ *  window (native X, a WM close shortcut like Super+Q, etc.) just hides it, so global
+ *  keybinds and the CLI/Stream Deck trigger keep working without the GUI popping back up.
+ *  Deliberately separate from before-quit's own one-shot cleanup guard below - conflating
+ *  them would make it skip the virtual-mic cleanup whenever this is set first. */
+let quitRequested = false
 const pendingPlayRequests: string[] = []
 
 function getSoundsDir(): string {
@@ -31,15 +41,25 @@ function getIconsDir(): string {
   return join(app.getPath('userData'), 'icons')
 }
 
+function getIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../build/icon.png')
+}
+
 /** The command a Stream Deck button / shell alias should invoke, resolved for however
  *  this copy of the app is actually running - never hard-coded to a single install style.
  *  Running as an AppImage, `app.getPath('exe')` points at the *mounted, temporary* copy
  *  under /tmp/.mountXXXXXX/..., which changes every launch - AppImage's own runtime sets
  *  $APPIMAGE to the real, stable .AppImage path, so prefer that when it's set. Otherwise
- *  (a .deb/.rpm/AUR install on PATH, or running unpackaged in dev) the resolved executable
- *  path is already correct and stable as-is. */
+ *  (a .deb/.rpm/AUR install on PATH) the resolved executable path is already correct and
+ *  stable as-is - but running *unpackaged* in dev, `app.getPath('exe')` is the bare
+ *  electron binary, which needs an explicit app-directory argument or it falls back to
+ *  Electron's own "To run a local app..." default screen instead of loading Noisitron. */
 function getInvocationCommand(): string {
-  return process.env.APPIMAGE || app.getPath('exe')
+  const exe = process.env.APPIMAGE || app.getPath('exe')
+  if (!app.isPackaged) return `${exe} "${app.getAppPath()}"`
+  return exe
 }
 
 function persistedSounds(): Sound[] {
@@ -67,6 +87,7 @@ function migrateSounds(): void {
   } else {
     const folders = store.get('folders').map((f) => ({
       sourcePath: null,
+      parentId: null,
       ...(f as Partial<Folder>)
     })) as Folder[]
     store.set('folders', folders)
@@ -259,7 +280,7 @@ function watchAllFolders(): void {
   for (const folder of persistedFolders()) watchFolder(folder)
 }
 
-function createWindow(): void {
+function createWindow(startHidden: boolean): void {
   mainWindow = new BrowserWindow({
     title: 'Noisitron',
     width: 1180,
@@ -268,6 +289,7 @@ function createWindow(): void {
     minHeight: 580,
     autoHideMenuBar: true,
     backgroundColor: '#0b0c10',
+    show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -276,8 +298,22 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
-  mainWindow.webContents.on('did-finish-load', flushPendingPlayRequests)
+  mainWindow.on('ready-to-show', () => {
+    if (!startHidden) mainWindow?.show()
+  })
+  // Pending play requests are flushed when the renderer explicitly signals it's listening
+  // (app:notifyReady), not on did-finish-load - that event only means the page finished
+  // loading, not that React has mounted and registered the IPC listener yet, and a message
+  // sent before anyone is listening for it is just lost.
+
+  // Closing the window (native X, a WM close shortcut, etc.) hides it instead of quitting,
+  // so the tray-resident app keeps playing sounds via keybinds/CLI. Only an explicit Quit
+  // (tray menu / Settings button) sets `quitRequested` and lets the close actually go through.
+  mainWindow.on('close', (e) => {
+    if (quitRequested) return
+    e.preventDefault()
+    mainWindow?.hide()
+  })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -289,6 +325,33 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+}
+
+function showMainWindow(): void {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray(): void {
+  const icon = nativeImage.createFromPath(getIconPath()).resize({ width: 22, height: 22 })
+  tray = new Tray(icon)
+  tray.setToolTip('Noisitron')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Show Noisitron', click: showMainWindow },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          quitRequested = true
+          app.quit()
+        }
+      }
+    ])
+  )
+  tray.on('click', showMainWindow)
 }
 
 function registerIpcHandlers(): void {
@@ -330,7 +393,7 @@ function registerIpcHandlers(): void {
     return sounds
   })
 
-  ipcMain.handle('sounds:importFolder', async () => {
+  ipcMain.handle('sounds:importFolder', async (_e, parentId: string | null) => {
     if (!mainWindow) return { sounds: persistedSounds(), folders: persistedFolders() }
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Import folder of sounds',
@@ -344,7 +407,7 @@ function registerIpcHandlers(): void {
     const filePaths = await listAudioFilesIn(dirPath)
 
     const folders = persistedFolders()
-    const folder: Folder = { id: randomUUID(), name: basename(dirPath), sourcePath: dirPath }
+    const folder: Folder = { id: randomUUID(), name: basename(dirPath), sourcePath: dirPath, parentId }
     folders.push(folder)
     store.set('folders', folders)
     watchFolder(folder)
@@ -352,6 +415,14 @@ function registerIpcHandlers(): void {
     const sounds = await copySoundFilesIntoLibrary(filePaths, folder.id)
     syncShortcuts()
     return { sounds, folders }
+  })
+
+  ipcMain.handle('folders:create', (_e, name: string, parentId: string | null) => {
+    const folders = persistedFolders()
+    const folder: Folder = { id: randomUUID(), name: name.trim() || 'New folder', sourcePath: null, parentId }
+    folders.push(folder)
+    store.set('folders', folders)
+    return folders
   })
 
   ipcMain.handle('folders:sync', async (_e, id: string) => {
@@ -369,9 +440,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('folders:remove', (_e, id: string) => {
     unwatchFolder(id)
-    const folders = persistedFolders().filter((f) => f.id !== id)
+    const all = persistedFolders()
+    const removedParentId = all.find((f) => f.id === id)?.parentId ?? null
+    // Promote children up one level rather than orphaning or cascade-deleting them.
+    const folders = all
+      .filter((f) => f.id !== id)
+      .map((f) => (f.parentId === id ? { ...f, parentId: removedParentId } : f))
     store.set('folders', folders)
-    const sounds = persistedSounds().map((s) => (s.folderId === id ? { ...s, folderId: null } : s))
+    const sounds = persistedSounds().map((s) =>
+      s.folderId === id ? { ...s, folderId: removedParentId } : s
+    )
     store.set('sounds', sounds)
     return { sounds, folders }
   })
@@ -538,13 +616,21 @@ function registerIpcHandlers(): void {
   ipcMain.handle('app:copyToClipboard', (_e, text: string) => {
     clipboard.writeText(text)
   })
+  ipcMain.handle('app:quit', () => {
+    quitRequested = true
+    app.quit()
+  })
+  ipcMain.handle('app:notifyReady', () => {
+    flushPendingPlayRequests()
+  })
 }
 
-let quitting = false
+let cleaningUpBeforeQuit = false
 app.on('before-quit', (e) => {
-  if (quitting) return
+  quitRequested = true
+  if (cleaningUpBeforeQuit) return
   e.preventDefault()
-  quitting = true
+  cleaningUpBeforeQuit = true
   // Electron's own shutdown can occasionally stall tearing down the
   // GPU/renderer processes; force-exit rather than leave a zombie process
   // once our pactl cleanup is done (or has had a fair chance to run).
@@ -563,6 +649,13 @@ app.on('will-quit', () => {
   for (const id of [...folderWatchers.keys()]) unwatchFolder(id)
 })
 
+/** A launch whose only purpose is to play a sound in the (possibly not-yet-running) app -
+ *  e.g. a Stream Deck button - shouldn't pop the GUI window up over whatever the user is
+ *  doing. A bare launch (no flags) still opens normally. */
+function hasPlayFlag(argv: string[]): boolean {
+  return argv.some((a) => a.startsWith('--play='))
+}
+
 app.whenReady().then(async () => {
   if (process.argv.includes('--list-sounds')) {
     printSoundListAndExit()
@@ -577,10 +670,7 @@ app.whenReady().then(async () => {
 
   app.on('second-instance', (_e, argv) => {
     handleCliArgs(argv)
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
+    if (!hasPlayFlag(argv)) showMainWindow()
   })
 
   store = new Store<Settings>({ defaults: DEFAULT_SETTINGS })
@@ -600,16 +690,18 @@ app.whenReady().then(async () => {
   })
 
   registerIpcHandlers()
-  createWindow()
+  createWindow(hasPlayFlag(process.argv))
+  createTray()
   probeGlobalShortcutSupport()
   syncShortcuts()
   handleCliArgs(process.argv)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(false)
+    else showMainWindow()
   })
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+// Tray-resident: no windows open just means the user closed/hid the window, not that they
+// want to quit. Quitting only happens via the explicit tray icon / Settings Quit action.
+app.on('window-all-closed', () => {})
