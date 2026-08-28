@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AudioDevice, Folder, Settings, Sound, VirtualMicStatus, SetKeybindResult } from '../shared/types'
+import type {
+  AudioDevice,
+  Folder,
+  Settings,
+  Sound,
+  VirtualMicStatus,
+  SetKeybindResult,
+  StoreSearchResult
+} from '../shared/types'
 
 const api = {
   devices: {
@@ -57,6 +65,12 @@ const api = {
       ipcRenderer.invoke('folders:remove', id),
     sync: (id: string): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
       ipcRenderer.invoke('folders:sync', id)
+  },
+  store: {
+    search: (query: string): Promise<StoreSearchResult[]> => ipcRenderer.invoke('store:search', query),
+    preview: (mp3Path: string): Promise<Uint8Array> => ipcRenderer.invoke('store:preview', mp3Path),
+    download: (result: StoreSearchResult): Promise<{ sounds: Sound[]; folders: Folder[]; sound: Sound }> =>
+      ipcRenderer.invoke('store:download', result)
   },
   app: {
     getExecPath: (): Promise<string> => ipcRenderer.invoke('app:getExecPath'),

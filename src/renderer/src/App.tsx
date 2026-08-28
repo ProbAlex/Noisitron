@@ -8,6 +8,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { SoundEditMenu } from './components/SoundEditMenu'
 import { TrimEditor } from './components/TrimEditor'
 import { Breadcrumb } from './components/Breadcrumb'
+import { StoreModal } from './components/StoreModal'
 
 function App() {
   const ready = useSoundboardStore((s) => s.ready)
@@ -16,6 +17,7 @@ function App() {
   const importSounds = useSoundboardStore((s) => s.importSounds)
   const importFolder = useSoundboardStore((s) => s.importFolder)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [storeOpen, setStoreOpen] = useState(false)
 
   useEffect(() => {
     void init()
@@ -55,6 +57,13 @@ function App() {
               ＋ Folder
             </button>
             <button
+              onClick={() => setStoreOpen(true)}
+              title="Sound Store"
+              className="rounded-lg border border-base-600 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-base-500 hover:text-slate-100"
+            >
+              🛒 Store
+            </button>
+            <button
               onClick={() => setSettingsOpen(true)}
               title="Settings"
               className="rounded-lg border border-base-600 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-base-500 hover:text-slate-100"
@@ -82,6 +91,7 @@ function App() {
       <SoundEditMenu />
       <TrimEditor />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {storeOpen && <StoreModal onClose={() => setStoreOpen(false)} />}
     </div>
   )
 }

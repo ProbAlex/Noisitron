@@ -61,6 +61,9 @@ export interface Settings {
   headphoneSinkName: string | null
   globalMicVolume: number
   globalHeadphoneVolume: number
+  /** id of the auto-created "Store" folder downloads land in; tracked by id (not name) so
+   *  renaming that folder doesn't orphan future downloads. Null until the first download. */
+  storeFolderId: string | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -69,7 +72,16 @@ export const DEFAULT_SETTINGS: Settings = {
   micSourceName: null,
   headphoneSinkName: null,
   globalMicVolume: 1,
-  globalHeadphoneVolume: 1
+  globalHeadphoneVolume: 1,
+  storeFolderId: null
+}
+
+/** One search hit from the MyInstants sound store. */
+export interface StoreSearchResult {
+  /** relative "/media/sounds/....mp3" path on myinstants.com - stable and unique per sound,
+   *  used both to fetch it and as its list key (MyInstants exposes no numeric id in search HTML). */
+  mp3Path: string
+  title: string
 }
 
 export interface ImportedSoundFile {

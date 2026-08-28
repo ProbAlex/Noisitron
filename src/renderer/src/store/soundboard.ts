@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AudioDevice, Folder, Sound, VirtualMicStatus } from '@shared/types'
+import type { AudioDevice, Folder, Sound, StoreSearchResult, VirtualMicStatus } from '@shared/types'
 import { VIRTUAL_MIC_SINK_DESCRIPTION } from '@shared/types'
 import { soundPlayer } from '../audio/player'
 import { findOutputDeviceId } from '../audio/deviceMatch'
@@ -57,6 +57,8 @@ interface SoundboardState {
   removeFolder: (id: string) => Promise<void>
   syncFolder: (id: string) => Promise<void>
   selectFolder: (id: string | null) => void
+
+  downloadStoreSound: (result: StoreSearchResult) => Promise<void>
 
   playSound: (sound: Sound) => Promise<void>
   stopSound: (id: string) => void
@@ -297,6 +299,11 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   },
 
   selectFolder: (id) => set({ selectedFolderId: id }),
+
+  downloadStoreSound: async (result) => {
+    const { sounds, folders } = await window.api.store.download(result)
+    set({ sounds, folders })
+  },
 
   playSound: async (sound) => {
     await soundPlayer.play(sound)

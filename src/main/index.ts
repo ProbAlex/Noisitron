@@ -16,7 +16,8 @@ import { promises as fs, watch as watchFs, type FSWatcher } from 'fs'
 import { randomUUID } from 'crypto'
 import Store from 'electron-store'
 import * as audio from './audio'
-import { DEFAULT_SETTINGS, type Settings, type Sound, type Folder } from '../shared/types'
+import { searchMyInstants, fetchMyInstantsAudio } from './myinstants'
+import { DEFAULT_SETTINGS, type Settings, type Sound, type Folder, type StoreSearchResult } from '../shared/types'
 
 const ALLOWED_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'webm']
 const ALLOWED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
@@ -195,6 +196,50 @@ async function copySoundFilesIntoLibrary(paths: string[], folderId: string | nul
   }
   store.set('sounds', sounds)
   return sounds
+}
+
+const STORE_FOLDER_NAME = 'Store'
+
+/** Finds (or creates) the folder store downloads land in, tracked by id rather than name -
+ *  the user can freely rename/move/delete it like any normal folder and downloads still find
+ *  their way there (or a fresh one gets created if it was deleted). */
+function getOrCreateStoreFolder(): Folder {
+  const existingId = store.get('storeFolderId') ?? null
+  const folders = persistedFolders()
+  if (existingId) {
+    const existing = folders.find((f) => f.id === existingId)
+    if (existing) return existing
+  }
+  const folder: Folder = { id: randomUUID(), name: STORE_FOLDER_NAME, sourcePath: null, parentId: null }
+  folders.push(folder)
+  store.set('folders', folders)
+  store.set('storeFolderId', folder.id)
+  return folder
+}
+
+async function downloadStoreSound(result: StoreSearchResult): Promise<Sound> {
+  const bytes = await fetchMyInstantsAudio(result.mp3Path)
+  const folder = getOrCreateStoreFolder()
+  const id = randomUUID()
+  const destPath = join(getSoundsDir(), `${id}.mp3`)
+  await fs.writeFile(destPath, bytes)
+
+  const sound: Sound = {
+    id,
+    name: result.title,
+    filePath: destPath,
+    ext: 'mp3',
+    volume: 1,
+    folderId: folder.id,
+    emoji: null,
+    imagePath: null,
+    keybind: null,
+    sourcePath: null
+  }
+  const sounds = persistedSounds()
+  sounds.push(sound)
+  store.set('sounds', sounds)
+  return sound
 }
 
 /** Audio files directly inside a directory (non-recursive), matching the import filter. */
@@ -428,6 +473,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle('folders:sync', async (_e, id: string) => {
     const sounds = await syncFolder(id)
     return { sounds, folders: persistedFolders() }
+  })
+
+  ipcMain.handle('store:search', (_e, query: string) => searchMyInstants(query))
+
+  ipcMain.handle('store:preview', async (_e, mp3Path: string) => fetchMyInstantsAudio(mp3Path))
+
+  ipcMain.handle('store:download', async (_e, result: StoreSearchResult) => {
+    const sound = await downloadStoreSound(result)
+    syncShortcuts()
+    return { sounds: persistedSounds(), folders: persistedFolders(), sound }
   })
 
   ipcMain.handle('folders:rename', (_e, id: string, name: string) => {
