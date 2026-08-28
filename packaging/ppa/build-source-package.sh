@@ -41,5 +41,5 @@ Next steps:
   dpkg-buildpackage -S -sa -us -uc     # unsigned - dput/Launchpad will ask you to sign, or add -k<KEYID> here
   cd ..
   debsign noisitron_${VERSION}-1_source.changes   # if not already signed above
-  dput ppa:leafyalex/noisitron noisitron_${VERSION}-1_source.changes
+  dput ppa:leafyalex/ppa-noisitron noisitron_${VERSION}-1_source.changes
 EOF
