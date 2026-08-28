@@ -5,7 +5,12 @@ Summary:        Soundboard that mixes clips into a virtual mic for Discord
 
 License:        GPL-3.0-only
 URL:            https://github.com/ProbAlex/Noisitron
-Source0:        https://github.com/ProbAlex/Noisitron/releases/download/v%{version}/noisitron_%{version}_amd64.deb
+# A bare filename, not a URL: unlike COPR (whose rpkg build step fetches Source0 URLs
+# itself), OBS never fetches Source0 - the _service file's download_url service must stage
+# it locally before rpmbuild runs. Using a version-independent name here (matching download_url's
+# `filename` param, fetched via GitHub's version-independent /releases/latest/download/ alias)
+# means neither this line nor the _service file need ever change again on future releases.
+Source0:        noisitron_amd64.deb
 
 ExclusiveArch:  x86_64
 BuildRequires:  binutils
