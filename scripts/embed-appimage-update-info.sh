@@ -45,11 +45,22 @@ echo "Extracting $APPIMAGE_PATH..."
 (cd "$WORKDIR" && env -u ELECTRON_RUN_AS_NODE "$APPIMAGE_PATH" --appimage-extract >/dev/null)
 
 echo "Re-packaging with update information..."
+APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
 rm -f "$APPIMAGE_PATH" "$APPIMAGE_PATH.zsync"
-ARCH=x86_64 "$APPIMAGETOOL" \
+# appimagetool invokes zsyncmake with the output *filename* it was given (not a resolved
+# absolute path), and zsyncmake writes its sidecar next to whatever that filename resolves
+# to in the current directory - so we must `cd` into DIST_DIR and pass a bare filename here,
+# otherwise the .zsync ends up relative to wherever this script's caller happened to be
+# invoked from (bit us for real: a stray zsync turned up at the repo root during earlier
+# local testing, and this is why CI's later `dist/*.zsync` glob was matching nothing).
+(cd "$DIST_DIR" && ARCH=x86_64 "$APPIMAGETOOL" \
   -u "gh-releases-zsync|$REPO_OWNER|$REPO_NAME|latest|$PRODUCT_NAME-*.AppImage.zsync" \
   --runtime-file "$RUNTIME_FILE" \
-  "$WORKDIR/squashfs-root" "$APPIMAGE_PATH" < /dev/null
+  "$WORKDIR/squashfs-root" "$APPIMAGE_NAME" < /dev/null)
 
 chmod +x "$APPIMAGE_PATH"
+if [ ! -f "$APPIMAGE_PATH.zsync" ]; then
+  echo "appimagetool reported success but $APPIMAGE_PATH.zsync was not created." >&2
+  exit 1
+fi
 echo "Done: $APPIMAGE_PATH (+ $(basename "$APPIMAGE_PATH").zsync)"
