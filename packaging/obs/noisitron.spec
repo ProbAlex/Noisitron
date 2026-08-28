@@ -54,5 +54,5 @@ find %{buildroot} \( -type f -o -type l \) | sed "s|^%{buildroot}||" > %{_buildd
 %files -f %{_builddir}/noisitron.filelist
 
 %changelog
-* Thu Aug 27 2026 leafyalex <tippydial@gmail.com> - 0.3.0-1
+* Thu Aug 27 2026 leafyalex <alex.dial@outlook.com> - 0.3.0-1
 - New upstream release: Sound Store (MyInstants search/download).
