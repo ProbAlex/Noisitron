@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: leafyalex <alex.dial@outlook.com>
 Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.2
-Homepage: https://github.com/ProbAlex/Noisitron
+Homepage: https://noisitron.com
 
 Package: noisitron
 Architecture: amd64

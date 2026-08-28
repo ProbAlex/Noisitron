@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        Soundboard that mixes clips into a virtual mic for Discord
 
 License:        GPL-3.0-only
-URL:            https://github.com/ProbAlex/Noisitron
+URL:            https://noisitron.com
 Source0:        https://github.com/ProbAlex/Noisitron/releases/download/v%{version}/noisitron_%{version}_amd64.deb
 
 ExclusiveArch:  x86_64
