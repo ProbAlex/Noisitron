@@ -39,7 +39,6 @@ Noisitron creates a virtual PulseAudio/PipeWire microphone. Anything you trigger
 | [Fedora](#fedora) | ✅ Available (COPR + `.rpm`) |
 | [openSUSE](#opensuse) | ✅ Available (OBS repo + `.rpm`) |
 | Arch Linux (AUR) | 🚧 Coming soon |
-| Flatpak | 🚧 Coming soon |
 
 ### AppImage (any distro)
 
@@ -102,10 +101,6 @@ sudo zypper install ./noisitron-*.x86_64.rpm
 ### Arch Linux — coming soon
 
 An AUR package (`noisitron-bin`) is planned but not published yet.
-
-### Flatpak — coming soon
-
-A Flathub submission is planned but not live yet. Until then, the [AppImage](#appimage-any-distro) (ideally managed through GearLever) is the closest equivalent — a single portable build that isn't tied to your distro's package manager.
 
 ## Building from source
 
