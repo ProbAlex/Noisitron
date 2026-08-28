@@ -62,6 +62,19 @@ jobs:
           git tag "v${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
 
+      # COPR's rpkg build and OBS's obs_scm service both clone whatever's on main and read
+      # Version: straight out of these spec files - unlike PKGBUILD (patched in publish-aur),
+      # nothing else bumps these, so without this they'd silently keep building the version
+      # that happened to be current when the spec was last hand-edited.
+      - name: Bump COPR/OBS spec versions
+        if: steps.version.outputs.is_new == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i "s/^\(Version:[[:space:]]*\).*/\1$VERSION/" packaging/copr/noisitron.spec packaging/obs/noisitron.spec
+          git add packaging/copr/noisitron.spec packaging/obs/noisitron.spec
+          git commit -m "Bump COPR/OBS spec files to $VERSION" || true
+          git push origin main
+
   build-linux:
     needs: check-version
     if: needs.check-version.outputs.is_new == 'true'
@@ -92,6 +105,15 @@ jobs:
       # the accompanying .zsync sidecar - see the script for details.
       - name: Embed AppImage update information
         run: bash scripts/embed-appimage-update-info.sh
+
+      # A version-independent-named copy of the .deb, alongside the real versioned one -
+      # OBS's download_url source service has no way to read %{version} out of a spec (each
+      # <param> is a static string, no cross-service templating), so without a stable name to
+      # point at, its _service file would need hand-editing on every single release forever.
+      # GitHub's /releases/latest/download/<name> alias always resolves this to whatever the
+      # newest release's asset is, so it never goes stale.
+      - name: Add stable-named .deb copy
+        run: cp dist/noisitron_${{ needs.check-version.outputs.version }}_amd64.deb dist/noisitron_amd64.deb
 
       # Published live (not draft): AUR/the PPA/COPR/OBS below all fetch this release's
       # assets by URL, which only resolve once it's actually public.
