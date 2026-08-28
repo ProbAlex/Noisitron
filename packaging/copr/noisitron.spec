@@ -7,7 +7,7 @@ License:        GPL-3.0-only
 URL:            https://github.com/ProbAlex/Noisitron
 Source0:        https://github.com/ProbAlex/Noisitron/releases/download/v%{version}/noisitron_%{version}_amd64.deb
 
-BuildArch:      x86_64
+ExclusiveArch:  x86_64
 BuildRequires:  binutils
 BuildRequires:  tar
 
