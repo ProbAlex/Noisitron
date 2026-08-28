@@ -1,36 +1,80 @@
 name: Release
 
-# Builds the Linux installers (AppImage, .deb, .rpm) and attaches them to a
-# GitHub Release. Runs on ubuntu-latest specifically because the rpm/deb
-# packaging toolchain electron-builder bundles (fpm) is only compatible with
-# the older rpmbuild shipped by that image - newer rpmbuild (as found on
-# rolling-release distros) fails with a buildroot path mismatch.
+# Runs on every push to main. Most pushes are no-ops here: a release only
+# actually happens when package.json's version doesn't yet have a matching
+# git tag - so "bump the version and merge to main" is the entire release
+# trigger, everything downstream (GitHub release, AUR, the PPA, pinging
+# COPR/OBS to rebuild) fires automatically off of that.
+#
+# Builds run on ubuntu-latest specifically because the rpm/deb packaging
+# toolchain electron-builder bundles (fpm) is only compatible with the older
+# rpmbuild shipped by that image - newer rpmbuild (as found on rolling-release
+# distros) fails with a buildroot path mismatch.
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_new: ${{ steps.version.outputs.is_new }}
+      has_aur: ${{ steps.optional.outputs.has_aur }}
+      has_ppa: ${{ steps.optional.outputs.has_ppa }}
+      has_copr: ${{ steps.optional.outputs.has_copr }}
+      has_obs: ${{ steps.optional.outputs.has_obs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "is_new=false" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION already tagged - nothing to release."
+          else
+            echo "is_new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Whether each downstream publish target is configured, so those jobs
+      # can no-op cleanly instead of failing when a secret hasn't been added
+      # yet - each one gets wired up independently as its account/key exists.
+      - id: optional
+        run: |
+          [ -n "${{ secrets.AUR_SSH_PRIVATE_KEY }}" ] && echo "has_aur=true" >> "$GITHUB_OUTPUT" || echo "has_aur=false" >> "$GITHUB_OUTPUT"
+          [ -n "${{ secrets.PPA_GPG_PRIVATE_KEY }}" ] && echo "has_ppa=true" >> "$GITHUB_OUTPUT" || echo "has_ppa=false" >> "$GITHUB_OUTPUT"
+          [ -n "${{ secrets.COPR_WEBHOOK_URL }}" ] && echo "has_copr=true" >> "$GITHUB_OUTPUT" || echo "has_copr=false" >> "$GITHUB_OUTPUT"
+          [ -n "${{ secrets.OBS_WEBHOOK_URL }}" ] && echo "has_obs=true" >> "$GITHUB_OUTPUT" || echo "has_obs=false" >> "$GITHUB_OUTPUT"
+
+      - name: Tag this release
+        if: steps.version.outputs.is_new == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
   build-linux:
+    needs: check-version
+    if: needs.check-version.outputs.is_new == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Typecheck
-        run: npm run typecheck
+      - run: npm ci
+      - run: npm run typecheck
 
       # `--publish never` is required, not optional: electron-builder infers "this is a
       # tagged CI build, I should publish to GitHub" from the environment itself (the git
@@ -49,11 +93,78 @@ jobs:
       - name: Embed AppImage update information
         run: bash scripts/embed-appimage-update-info.sh
 
-      - name: Publish release (draft)
+      # Published live (not draft): AUR/the PPA/COPR/OBS below all fetch this release's
+      # assets by URL, which only resolve once it's actually public.
+      - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          gh release create "v$VERSION" \
+          gh release create "v${{ needs.check-version.outputs.version }}" \
             dist/*.AppImage dist/*.AppImage.zsync dist/*.deb dist/*.rpm \
-            --title "$VERSION" --generate-notes --draft
+            --title "${{ needs.check-version.outputs.version }}" --generate-notes
+
+  publish-aur:
+    needs: [check-version, build-linux]
+    if: needs.check-version.outputs.is_new == 'true' && needs.check-version.outputs.has_aur == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update PKGBUILD/.SRCINFO for this version
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          curl -sSL -o /tmp/noisitron.deb \
+            "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/noisitron_${VERSION}_amd64.deb"
+          SHA="$(sha256sum /tmp/noisitron.deb | cut -d' ' -f1)"
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/PKGBUILD
+          sed -i "s/^sha256sums=.*/sha256sums=('$SHA')/" packaging/aur/PKGBUILD
+          sed -i "s/^\(\s*pkgver = \).*/\1$VERSION/" packaging/aur/.SRCINFO
+          sed -i "s/^\(\s*source = \).*/\1https:\/\/github.com\/${{ github.repository }}\/releases\/download\/v$VERSION\/noisitron_${VERSION}_amd64.deb/" packaging/aur/.SRCINFO
+          sed -i "s/^\(\s*sha256sums = \).*/\1$SHA/" packaging/aur/.SRCINFO
+
+      - uses: KSXGitHub/github-actions-deploy-aur@v4
+        with:
+          pkgname: noisitron-bin
+          pkgbuild: packaging/aur/PKGBUILD
+          assets: packaging/aur/.SRCINFO
+          commit_username: leafyalex
+          commit_email: tippydial@gmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ needs.check-version.outputs.version }}"
+
+  publish-ppa:
+    needs: [check-version, build-linux]
+    if: needs.check-version.outputs.is_new == 'true' && needs.check-version.outputs.has_ppa == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper dput gnupg
+
+      - name: Import signing key
+        run: echo "${{ secrets.PPA_GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - name: Build and upload source package
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          bash packaging/ppa/build-source-package.sh "$VERSION"
+          cd packaging/ppa/build/noisitron-$VERSION
+          KEYID="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/ {print $5; exit}')"
+          dpkg-buildpackage -S -sa -us -uc
+          cd ..
+          debsign -k"$KEYID" "noisitron_${VERSION}-1_source.changes"
+          dput ppa:leafyalex/noisitron "noisitron_${VERSION}-1_source.changes"
+
+  trigger-copr-obs:
+    needs: [check-version, build-linux]
+    if: needs.check-version.outputs.is_new == 'true' && (needs.check-version.outputs.has_copr == 'true' || needs.check-version.outputs.has_obs == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger COPR rebuild
+        if: needs.check-version.outputs.has_copr == 'true'
+        run: curl -fsSL -X POST "${{ secrets.COPR_WEBHOOK_URL }}"
+
+      - name: Trigger OBS rebuild
+        if: needs.check-version.outputs.has_obs == 'true'
+        run: curl -fsSL "${{ secrets.OBS_WEBHOOK_URL }}"
