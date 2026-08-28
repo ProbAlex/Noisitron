@@ -46,6 +46,10 @@ install -d %{buildroot}%{_bindir}
 ln -sf /opt/Noisitron/noisitron %{buildroot}%{_bindir}/noisitron
 
 find %{buildroot} \( -type f -o -type l \) | sed "s|^%{buildroot}||" > %{_builddir}/noisitron.filelist
+# Every parent directory needs explicit %dir ownership too, or OBS's (stricter than COPR's)
+# filelist lint fails the build with "directories not owned by a package" - harmless here
+# even though COPR didn't enforce it, and keeps both specs' %install identical.
+find %{buildroot} -mindepth 1 -type d | sed "s|^%{buildroot}||;s|^|%dir |" >> %{_builddir}/noisitron.filelist
 
 %files -f %{_builddir}/noisitron.filelist
 
