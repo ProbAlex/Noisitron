@@ -20,6 +20,6 @@ pkgbase = noisitron-bin
 	options = !strip
 	options = !debug
 	source = https://github.com/ProbAlex/Noisitron/releases/download/v0.3.0/noisitron_0.3.0_amd64.deb
-	sha256sums = SKIP
+	sha256sums = 6adf47dd6c56ea76708e78af149155d3a4d129082b7b53cfed779d31076b5b23
 
 pkgname = noisitron-bin

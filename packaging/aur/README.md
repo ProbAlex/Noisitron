@@ -12,19 +12,21 @@ compile anything, so it needs no build dependencies beyond `ar` and `tar`
 
 ## Before the first publish
 
-1. Push a version tag (e.g. `git tag v0.1.0 && git push --tags`) so the
-   Release workflow builds and uploads `noisitron_<version>_amd64.deb` to a
-   matching GitHub Release. `PKGBUILD`'s `source=` URL expects that exact
-   asset name/path.
-2. Replace `sha256sums=('SKIP')` in `PKGBUILD` with the real hash of that
-   release asset - on any machine (Arch not required):
+1. ~~Push a version tag so the Release workflow builds and uploads
+   `noisitron_<version>_amd64.deb`~~ - done: `PKGBUILD` currently targets
+   `v0.3.0`, and `sha256sums` already has that release asset's real hash
+   (computed the same way as below). This step only matters again for a
+   future version bump.
+2. Replace `sha256sums` in `PKGBUILD` with the real hash of the release
+   asset - on any machine (Arch not required):
    ```sh
-   curl -sL -o noisitron_0.1.0_amd64.deb \
-     https://github.com/ProbAlex/Noisitron/releases/download/v0.1.0/noisitron_0.1.0_amd64.deb
-   sha256sum noisitron_0.1.0_amd64.deb
+   curl -sL -o noisitron_0.3.0_amd64.deb \
+     https://github.com/ProbAlex/Noisitron/releases/download/v0.3.0/noisitron_0.3.0_amd64.deb
+   sha256sum noisitron_0.3.0_amd64.deb
    ```
-   `SKIP` disables integrity checking entirely, which AUR maintainers/users
-   are right to be wary of for anything meant to stick around.
+   (`SKIP` disables integrity checking entirely, which AUR maintainers/users
+   are right to be wary of for anything meant to stick around - don't leave
+   it in place.)
 3. On an Arch machine, regenerate `.SRCINFO` from `PKGBUILD` rather than
    hand-editing it further (the copy here was hand-written to match, since
    this dev environment isn't Arch and doesn't have `makepkg`):
@@ -38,18 +40,37 @@ compile anything, so it needs no build dependencies beyond `ar` and `tar`
 
 ## Publishing (requires your own AUR account - this step is yours to run)
 
-1. Create an AUR account and add an SSH public key to it at
-   https://aur.archlinux.org/, if you haven't already.
-2. Clone the (empty, AUR-provisioned) package repo and copy these two files
-   into it:
+You said you don't have an AUR account yet, so start here:
+
+1. **Create the account**: https://aur.archlinux.org/register/ - just an
+   email + username, no Arch installation needed.
+2. **Generate an SSH key** for it, if you don't already have one you want to
+   use for this:
+   ```sh
+   ssh-keygen -t ed25519 -C "aur-noisitron" -f ~/.ssh/aur_noisitron
+   ```
+3. **Add the public key** to your AUR account: log in at
+   https://aur.archlinux.org/, go to My Account, paste the contents of
+   `~/.ssh/aur_noisitron.pub` into the SSH Public Key field, and save.
+4. Make sure SSH actually uses that key for the AUR host (add to
+   `~/.ssh/config` if it's not your default key):
+   ```
+   Host aur.archlinux.org
+     IdentityFile ~/.ssh/aur_noisitron
+     User aur
+   ```
+5. Clone the (empty, AUR-provisioned) package repo - this creates it on
+   first push, no separate "create repo" step needed - and copy these two
+   files into it:
    ```sh
    git clone ssh://aur@aur.archlinux.org/noisitron-bin.git
    cp PKGBUILD .SRCINFO noisitron-bin/
    cd noisitron-bin
    git add PKGBUILD .SRCINFO
-   git commit -m "Initial import: noisitron-bin 0.1.0"
+   git commit -m "Initial import: noisitron-bin 0.3.0"
    git push
    ```
+6. Check it landed: https://aur.archlinux.org/packages/noisitron-bin
 
 ## Releasing a new version later
 
