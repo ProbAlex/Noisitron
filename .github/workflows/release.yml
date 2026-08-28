@@ -97,6 +97,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-node@v4
         with:
@@ -147,6 +149,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Update PKGBUILD/.SRCINFO for this version
         run: |
@@ -175,7 +179,14 @@ jobs:
     if: needs.check-version.outputs.is_new == 'true' && needs.check-version.outputs.has_ppa == 'true'
     runs-on: ubuntu-latest
     steps:
+      # ref: main (not the default trigger SHA) on all three downstream jobs' checkouts -
+      # check-version pushes its version-bump commit to main mid-run, *after* the SHA that
+      # actually triggered this workflow, so a plain checkout here would silently miss it.
+      # Reproduced for real: two releases in a row built/uploaded the *previous* version's
+      # debian/changelog entry because this job never saw the bump that check-version made.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       # build-essential is required even though nothing here actually compiles anything -
       # dpkg-checkbuilddeps treats it as an implicit baseline per Debian policy, and it's not
