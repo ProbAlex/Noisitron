@@ -193,8 +193,10 @@ jobs:
       # preinstalled on the runner image the way it would be on a real Debian/Ubuntu machine.
       # Reproduced for real: dpkg-checkbuilddeps errored "Unmet build dependencies:
       # build-essential:native" without this.
+      # devscripts provides debsign - a separate package from dpkg-dev, missed the first time
+      # around (dpkg-buildpackage itself doesn't need it, only the signing step right after).
       - name: Install packaging tools
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper dput gnupg build-essential
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper dput gnupg build-essential devscripts
 
       - name: Import signing key
         run: echo "${{ secrets.PPA_GPG_PRIVATE_KEY }}" | gpg --batch --import
