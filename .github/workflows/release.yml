@@ -32,10 +32,15 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # `--publish never` is required, not optional: electron-builder infers "this is a
+      # tagged CI build, I should publish to GitHub" from the environment itself (the git
+      # remote + CI/tag detection), independent of whether a `publish:` block exists in
+      # config or whether --publish was otherwise omitted. Without this flag it tries to
+      # publish mid-build, before GH_TOKEN is set for this step, and fails outright.
       - name: Build Linux packages
         run: |
           npx electron-vite build
-          npx electron-builder --linux AppImage deb rpm
+          npx electron-builder --linux AppImage deb rpm --publish never
 
       # electron-builder has no concept of the AppImageUpdate/GearLever update-info
       # convention, so the AppImage it produces isn't discoverable by those tools.
