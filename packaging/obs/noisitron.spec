@@ -54,12 +54,28 @@ popd
 install -d %{buildroot}%{_bindir}
 ln -sf /opt/Noisitron/noisitron %{buildroot}%{_bindir}/noisitron
 
+# The .deb hardlinks its two copies of the icon together (same inode) to save space -
+# harmless for dpkg, but rpmlint's hardlink-across-partition check flags it since /opt and
+# /usr aren't guaranteed to be on the same filesystem on every install. Break any such
+# hardlinks by replacing every copy past the first with a real, independent copy.
+find %{buildroot} -type f -links +1 -printf '%%i\n' | sort -u | while read -r inode; do
+  files=$(find %{buildroot} -type f -inum "$inode")
+  first=$(echo "$files" | head -1)
+  echo "$files" | tail -n +2 | while read -r f; do
+    cp --remove-destination "$first" "$f"
+  done
+done
+
 find %{buildroot} \( -type f -o -type l \) | sed "s|^%{buildroot}||" > %{_builddir}/noisitron.filelist
 # Every parent directory needs explicit %dir ownership too, or OBS's filelist lint fails the
 # build with "directories not owned by a package" - plain rpmbuild doesn't enforce this, so
-# this went unnoticed until it actually ran on OBS. Harmless to also list dirs some other
-# package already owns (e.g. /usr/share/icons/hicolor) - RPM allows shared ownership fine.
-find %{buildroot} -mindepth 1 -type d | sed "s|^%{buildroot}||;s|^|%dir |" >> %{_builddir}/noisitron.filelist
+# this went unnoticed until it actually ran on OBS. Excludes standard FHS directories that
+# are always owned by the `filesystem` package - claiming those ourselves is a *different*
+# rpmlint error (standard-dir-owned-by-package), not a fix for this one.
+find %{buildroot} -mindepth 1 -type d \
+  | sed "s|^%{buildroot}||" \
+  | grep -vE '^/(opt|usr|usr/bin|usr/share|usr/share/doc|usr/share/icons)$' \
+  | sed "s|^|%dir |" >> %{_builddir}/noisitron.filelist
 
 %files -f %{_builddir}/noisitron.filelist
 
