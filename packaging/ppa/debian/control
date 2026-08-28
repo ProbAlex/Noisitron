@@ -1,0 +1,19 @@
+Source: noisitron
+Section: sound
+Priority: optional
+Maintainer: leafyalex <tippydial@gmail.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/ProbAlex/Noisitron
+
+Package: noisitron
+Architecture: amd64
+Depends: ${misc:Depends}, libgtk-3-0, libnss3, libxss1, libxtst6, libnotify4, libatspi2.0-0, libsecret-1-0, xdg-utils, libpulse0
+Recommends: libappindicator3-1
+Description: Soundboard that mixes clips into a virtual mic for Discord
+ Noisitron mixes local audio clips into a virtual PulseAudio/PipeWire
+ microphone so Discord (or any other app) hears them alongside your
+ voice, while you monitor playback through your headphones.
+ .
+ This package repackages the project's prebuilt Linux release (an
+ Electron app) rather than compiling from source - see debian/README.source.

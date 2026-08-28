@@ -1,16 +1,18 @@
 import { useSoundboardStore } from '../store/soundboard'
 import { SoundTile } from './SoundTile'
+import { FolderTile } from './FolderTile'
 
 export function SoundGrid() {
   const sounds = useSoundboardStore((s) => s.sounds)
+  const folders = useSoundboardStore((s) => s.folders)
   const selectedFolderId = useSoundboardStore((s) => s.selectedFolderId)
   const activeSoundIds = useSoundboardStore((s) => s.activeSoundIds)
   const importSounds = useSoundboardStore((s) => s.importSounds)
 
-  const visible =
-    selectedFolderId === null ? sounds : sounds.filter((s) => s.folderId === selectedFolderId)
+  const subfolders = folders.filter((f) => f.parentId === selectedFolderId)
+  const directSounds = sounds.filter((s) => s.folderId === selectedFolderId)
 
-  if (sounds.length === 0) {
+  if (sounds.length === 0 && folders.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-slate-500">
         <div className="text-4xl">🔇</div>
@@ -25,18 +27,36 @@ export function SoundGrid() {
     )
   }
 
-  if (visible.length === 0) {
+  if (subfolders.length === 0 && directSounds.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-slate-500">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-slate-500">
         <div className="text-4xl">📁</div>
-        <p className="text-sm">This folder is empty. Right-click a sound anywhere to move it here.</p>
+        <p className="text-sm">This folder is empty.</p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => void importSounds()}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+          >
+            Import sounds
+          </button>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-      {visible.map((sound) => (
+      {subfolders.map((folder) => (
+        <FolderTile
+          key={folder.id}
+          folder={folder}
+          itemCount={
+            folders.filter((f) => f.parentId === folder.id).length +
+            sounds.filter((s) => s.folderId === folder.id).length
+          }
+        />
+      ))}
+      {directSounds.map((sound) => (
         <SoundTile key={sound.id} sound={sound} playing={activeSoundIds.has(sound.id)} />
       ))}
       <button

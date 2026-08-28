@@ -38,11 +38,20 @@ export interface Sound {
   imagePath: string | null
   /** Electron accelerator string (e.g. "Control+Alt+F1") that triggers this sound system-wide */
   keybind: string | null
+  /** absolute path of the original file this was copied from, if imported via a folder or
+   *  file picker; used to detect "already imported" when re-syncing a folder. Null for sounds
+   *  that predate this field. */
+  sourcePath: string | null
 }
 
 export interface Folder {
   id: string
   name: string
+  /** absolute path of the directory this folder was imported from, if any; re-syncing
+   *  requires this. Null for folders that predate this field. */
+  sourcePath: string | null
+  /** id of the Folder this one is nested under, or null for a top-level folder. */
+  parentId: string | null
 }
 
 export interface Settings {
@@ -52,6 +61,9 @@ export interface Settings {
   headphoneSinkName: string | null
   globalMicVolume: number
   globalHeadphoneVolume: number
+  /** id of the auto-created "Store" folder downloads land in; tracked by id (not name) so
+   *  renaming that folder doesn't orphan future downloads. Null until the first download. */
+  storeFolderId: string | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -60,7 +72,16 @@ export const DEFAULT_SETTINGS: Settings = {
   micSourceName: null,
   headphoneSinkName: null,
   globalMicVolume: 1,
-  globalHeadphoneVolume: 1
+  globalHeadphoneVolume: 1,
+  storeFolderId: null
+}
+
+/** One search hit from the MyInstants sound store. */
+export interface StoreSearchResult {
+  /** relative "/media/sounds/....mp3" path on myinstants.com - stable and unique per sound,
+   *  used both to fetch it and as its list key (MyInstants exposes no numeric id in search HTML). */
+  mp3Path: string
+  title: string
 }
 
 export interface ImportedSoundFile {

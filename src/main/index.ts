@@ -5,21 +5,33 @@ import {
   ipcMain,
   dialog,
   session,
-  globalShortcut
+  globalShortcut,
+  clipboard,
+  Tray,
+  Menu,
+  nativeImage
 } from 'electron'
 import { join, extname, basename } from 'path'
-import { promises as fs } from 'fs'
+import { promises as fs, watch as watchFs, type FSWatcher } from 'fs'
 import { randomUUID } from 'crypto'
 import Store from 'electron-store'
 import * as audio from './audio'
-import { DEFAULT_SETTINGS, type Settings, type Sound, type Folder } from '../shared/types'
+import { searchMyInstants, fetchMyInstantsAudio } from './myinstants'
+import { DEFAULT_SETTINGS, type Settings, type Sound, type Folder, type StoreSearchResult } from '../shared/types'
 
 const ALLOWED_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'webm']
 const ALLOWED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
 
 let store: Store<Settings>
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 let windowReady = false
+/** Set only by an explicit Quit (tray menu / Settings button). Until then, closing the
+ *  window (native X, a WM close shortcut like Super+Q, etc.) just hides it, so global
+ *  keybinds and the CLI/Stream Deck trigger keep working without the GUI popping back up.
+ *  Deliberately separate from before-quit's own one-shot cleanup guard below - conflating
+ *  them would make it skip the virtual-mic cleanup whenever this is set first. */
+let quitRequested = false
 const pendingPlayRequests: string[] = []
 
 function getSoundsDir(): string {
@@ -28,6 +40,27 @@ function getSoundsDir(): string {
 
 function getIconsDir(): string {
   return join(app.getPath('userData'), 'icons')
+}
+
+function getIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../build/icon.png')
+}
+
+/** The command a Stream Deck button / shell alias should invoke, resolved for however
+ *  this copy of the app is actually running - never hard-coded to a single install style.
+ *  Running as an AppImage, `app.getPath('exe')` points at the *mounted, temporary* copy
+ *  under /tmp/.mountXXXXXX/..., which changes every launch - AppImage's own runtime sets
+ *  $APPIMAGE to the real, stable .AppImage path, so prefer that when it's set. Otherwise
+ *  (a .deb/.rpm/AUR install on PATH) the resolved executable path is already correct and
+ *  stable as-is - but running *unpackaged* in dev, `app.getPath('exe')` is the bare
+ *  electron binary, which needs an explicit app-directory argument or it falls back to
+ *  Electron's own "To run a local app..." default screen instead of loading Noisitron. */
+function getInvocationCommand(): string {
+  const exe = process.env.APPIMAGE || app.getPath('exe')
+  if (!app.isPackaged) return `${exe} "${app.getAppPath()}"`
+  return exe
 }
 
 function persistedSounds(): Sound[] {
@@ -45,10 +78,21 @@ function migrateSounds(): void {
     emoji: null,
     imagePath: null,
     keybind: null,
+    sourcePath: null,
     ...(s as Partial<Sound>)
   })) as Sound[]
   store.set('sounds', sounds)
-  if (!store.has('folders')) store.set('folders', [])
+
+  if (!store.has('folders')) {
+    store.set('folders', [])
+  } else {
+    const folders = store.get('folders').map((f) => ({
+      sourcePath: null,
+      parentId: null,
+      ...(f as Partial<Folder>)
+    })) as Folder[]
+    store.set('folders', folders)
+  }
 }
 
 function sendPlayRequest(soundId: string): void {
@@ -146,14 +190,142 @@ async function copySoundFilesIntoLibrary(paths: string[], folderId: string | nul
       folderId,
       emoji: null,
       imagePath: null,
-      keybind: null
+      keybind: null,
+      sourcePath: srcPath
     })
   }
   store.set('sounds', sounds)
   return sounds
 }
 
-function createWindow(): void {
+const STORE_FOLDER_NAME = 'Store'
+
+/** Finds (or creates) the folder store downloads land in, tracked by id rather than name -
+ *  the user can freely rename/move/delete it like any normal folder and downloads still find
+ *  their way there (or a fresh one gets created if it was deleted). */
+function getOrCreateStoreFolder(): Folder {
+  const existingId = store.get('storeFolderId') ?? null
+  const folders = persistedFolders()
+  if (existingId) {
+    const existing = folders.find((f) => f.id === existingId)
+    if (existing) return existing
+  }
+  const folder: Folder = { id: randomUUID(), name: STORE_FOLDER_NAME, sourcePath: null, parentId: null }
+  folders.push(folder)
+  store.set('folders', folders)
+  store.set('storeFolderId', folder.id)
+  return folder
+}
+
+async function downloadStoreSound(result: StoreSearchResult): Promise<Sound> {
+  const bytes = await fetchMyInstantsAudio(result.mp3Path)
+  const folder = getOrCreateStoreFolder()
+  const id = randomUUID()
+  const destPath = join(getSoundsDir(), `${id}.mp3`)
+  await fs.writeFile(destPath, bytes)
+
+  const sound: Sound = {
+    id,
+    name: result.title,
+    filePath: destPath,
+    ext: 'mp3',
+    volume: 1,
+    folderId: folder.id,
+    emoji: null,
+    imagePath: null,
+    keybind: null,
+    sourcePath: null
+  }
+  const sounds = persistedSounds()
+  sounds.push(sound)
+  store.set('sounds', sounds)
+  return sound
+}
+
+/** Audio files directly inside a directory (non-recursive), matching the import filter. */
+async function listAudioFilesIn(dirPath: string): Promise<string[]> {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true })
+  return entries
+    .filter((e) => e.isFile())
+    .map((e) => join(dirPath, e.name))
+    .filter((p) => ALLOWED_EXTENSIONS.includes(extname(p).slice(1).toLowerCase()))
+}
+
+/** Copies in any file from a folder's source directory not already represented by an
+ *  existing sound's sourcePath. Additive only - never removes a sound whose source file
+ *  disappeared, since the same folder may be shared/edited outside the app. */
+async function syncFolder(folderId: string): Promise<Sound[]> {
+  const folder = persistedFolders().find((f) => f.id === folderId)
+  if (!folder?.sourcePath) return persistedSounds()
+
+  const candidates = await listAudioFilesIn(folder.sourcePath).catch(() => [])
+  const known = new Set(persistedSounds().map((s) => s.sourcePath).filter(Boolean))
+  const newPaths = candidates.filter((p) => !known.has(p))
+  if (newPaths.length === 0) return persistedSounds()
+
+  const sounds = await copySoundFilesIntoLibrary(newPaths, folderId)
+  syncShortcuts()
+  return sounds
+}
+
+/** Re-syncs every folder that has a known source directory. Called once at startup so
+ *  simply reopening the app picks up files added to a source folder since last run. */
+async function syncAllFolders(): Promise<void> {
+  for (const folder of persistedFolders()) {
+    if (folder.sourcePath) await syncFolder(folder.id).catch(() => {})
+  }
+}
+
+const folderWatchers = new Map<string, FSWatcher>()
+const folderSyncDebounce = new Map<string, ReturnType<typeof setTimeout>>()
+
+function notifyLibraryChanged(): void {
+  mainWindow?.webContents.send('library:changed', {
+    sounds: persistedSounds(),
+    folders: persistedFolders()
+  })
+}
+
+/** Live-syncs a folder: any change in its source directory (file added, removed, renamed)
+ *  triggers a debounced re-sync while the app is running, no relaunch needed. inotify (via
+ *  fs.watch) can fire several events for a single filesystem operation, hence the debounce. */
+function watchFolder(folder: Folder): void {
+  if (!folder.sourcePath) return
+  unwatchFolder(folder.id)
+  try {
+    const watcher = watchFs(folder.sourcePath, { persistent: true }, () => {
+      const existing = folderSyncDebounce.get(folder.id)
+      if (existing) clearTimeout(existing)
+      folderSyncDebounce.set(
+        folder.id,
+        setTimeout(() => {
+          folderSyncDebounce.delete(folder.id)
+          syncFolder(folder.id)
+            .then(() => notifyLibraryChanged())
+            .catch(() => {})
+        }, 500)
+      )
+    })
+    watcher.on('error', () => unwatchFolder(folder.id))
+    folderWatchers.set(folder.id, watcher)
+  } catch {
+    // Source directory may be missing/unmounted/inaccessible - just skip watching it.
+  }
+}
+
+function unwatchFolder(folderId: string): void {
+  folderWatchers.get(folderId)?.close()
+  folderWatchers.delete(folderId)
+  const timer = folderSyncDebounce.get(folderId)
+  if (timer) clearTimeout(timer)
+  folderSyncDebounce.delete(folderId)
+}
+
+function watchAllFolders(): void {
+  for (const folder of persistedFolders()) watchFolder(folder)
+}
+
+function createWindow(startHidden: boolean): void {
   mainWindow = new BrowserWindow({
     title: 'Noisitron',
     width: 1180,
@@ -162,6 +334,7 @@ function createWindow(): void {
     minHeight: 580,
     autoHideMenuBar: true,
     backgroundColor: '#0b0c10',
+    show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -170,8 +343,22 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
-  mainWindow.webContents.on('did-finish-load', flushPendingPlayRequests)
+  mainWindow.on('ready-to-show', () => {
+    if (!startHidden) mainWindow?.show()
+  })
+  // Pending play requests are flushed when the renderer explicitly signals it's listening
+  // (app:notifyReady), not on did-finish-load - that event only means the page finished
+  // loading, not that React has mounted and registered the IPC listener yet, and a message
+  // sent before anyone is listening for it is just lost.
+
+  // Closing the window (native X, a WM close shortcut, etc.) hides it instead of quitting,
+  // so the tray-resident app keeps playing sounds via keybinds/CLI. Only an explicit Quit
+  // (tray menu / Settings button) sets `quitRequested` and lets the close actually go through.
+  mainWindow.on('close', (e) => {
+    if (quitRequested) return
+    e.preventDefault()
+    mainWindow?.hide()
+  })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -183,6 +370,33 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+}
+
+function showMainWindow(): void {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray(): void {
+  const icon = nativeImage.createFromPath(getIconPath()).resize({ width: 22, height: 22 })
+  tray = new Tray(icon)
+  tray.setToolTip('Noisitron')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Show Noisitron', click: showMainWindow },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          quitRequested = true
+          app.quit()
+        }
+      }
+    ])
+  )
+  tray.on('click', showMainWindow)
 }
 
 function registerIpcHandlers(): void {
@@ -224,7 +438,7 @@ function registerIpcHandlers(): void {
     return sounds
   })
 
-  ipcMain.handle('sounds:importFolder', async () => {
+  ipcMain.handle('sounds:importFolder', async (_e, parentId: string | null) => {
     if (!mainWindow) return { sounds: persistedSounds(), folders: persistedFolders() }
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Import folder of sounds',
@@ -235,20 +449,40 @@ function registerIpcHandlers(): void {
     }
 
     const dirPath = result.filePaths[0]
-    const entries = await fs.readdir(dirPath, { withFileTypes: true })
-    const filePaths = entries
-      .filter((e) => e.isFile())
-      .map((e) => join(dirPath, e.name))
-      .filter((p) => ALLOWED_EXTENSIONS.includes(extname(p).slice(1).toLowerCase()))
+    const filePaths = await listAudioFilesIn(dirPath)
 
     const folders = persistedFolders()
-    const folder: Folder = { id: randomUUID(), name: basename(dirPath) }
+    const folder: Folder = { id: randomUUID(), name: basename(dirPath), sourcePath: dirPath, parentId }
     folders.push(folder)
     store.set('folders', folders)
+    watchFolder(folder)
 
     const sounds = await copySoundFilesIntoLibrary(filePaths, folder.id)
     syncShortcuts()
     return { sounds, folders }
+  })
+
+  ipcMain.handle('folders:create', (_e, name: string, parentId: string | null) => {
+    const folders = persistedFolders()
+    const folder: Folder = { id: randomUUID(), name: name.trim() || 'New folder', sourcePath: null, parentId }
+    folders.push(folder)
+    store.set('folders', folders)
+    return folders
+  })
+
+  ipcMain.handle('folders:sync', async (_e, id: string) => {
+    const sounds = await syncFolder(id)
+    return { sounds, folders: persistedFolders() }
+  })
+
+  ipcMain.handle('store:search', (_e, query: string) => searchMyInstants(query))
+
+  ipcMain.handle('store:preview', async (_e, mp3Path: string) => fetchMyInstantsAudio(mp3Path))
+
+  ipcMain.handle('store:download', async (_e, result: StoreSearchResult) => {
+    const sound = await downloadStoreSound(result)
+    syncShortcuts()
+    return { sounds: persistedSounds(), folders: persistedFolders(), sound }
   })
 
   ipcMain.handle('folders:rename', (_e, id: string, name: string) => {
@@ -260,9 +494,17 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('folders:remove', (_e, id: string) => {
-    const folders = persistedFolders().filter((f) => f.id !== id)
+    unwatchFolder(id)
+    const all = persistedFolders()
+    const removedParentId = all.find((f) => f.id === id)?.parentId ?? null
+    // Promote children up one level rather than orphaning or cascade-deleting them.
+    const folders = all
+      .filter((f) => f.id !== id)
+      .map((f) => (f.parentId === id ? { ...f, parentId: removedParentId } : f))
     store.set('folders', folders)
-    const sounds = persistedSounds().map((s) => (s.folderId === id ? { ...s, folderId: null } : s))
+    const sounds = persistedSounds().map((s) =>
+      s.folderId === id ? { ...s, folderId: removedParentId } : s
+    )
     store.set('sounds', sounds)
     return { sounds, folders }
   })
@@ -293,6 +535,23 @@ function registerIpcHandlers(): void {
     const target = sounds.find((s) => s.id === id)
     if (target) target.volume = volume
     store.set('sounds', sounds)
+    return sounds
+  })
+
+  ipcMain.handle('sounds:trim', async (_e, id: string, bytes: Uint8Array) => {
+    const sounds = persistedSounds()
+    const target = sounds.find((s) => s.id === id)
+    if (!target) return sounds
+
+    const newPath = join(getSoundsDir(), `${randomUUID()}.wav`)
+    await fs.writeFile(newPath, bytes)
+
+    const oldPath = target.filePath
+    target.filePath = newPath
+    target.ext = 'wav'
+    store.set('sounds', sounds)
+
+    await fs.unlink(oldPath).catch(() => {})
     return sounds
   })
 
@@ -406,16 +665,27 @@ function registerIpcHandlers(): void {
     return fs.readFile(filePath)
   })
 
-  ipcMain.handle('app:getExecPath', () => app.getPath('exe'))
+  ipcMain.handle('app:getExecPath', () => getInvocationCommand())
   ipcMain.handle('app:getCapabilities', () => ({ globalShortcuts: globalShortcutsSupported }))
   ipcMain.handle('app:openSoundsFolder', () => shell.openPath(getSoundsDir()))
+  ipcMain.handle('app:copyToClipboard', (_e, text: string) => {
+    clipboard.writeText(text)
+  })
+  ipcMain.handle('app:quit', () => {
+    quitRequested = true
+    app.quit()
+  })
+  ipcMain.handle('app:notifyReady', () => {
+    flushPendingPlayRequests()
+  })
 }
 
-let quitting = false
+let cleaningUpBeforeQuit = false
 app.on('before-quit', (e) => {
-  if (quitting) return
+  quitRequested = true
+  if (cleaningUpBeforeQuit) return
   e.preventDefault()
-  quitting = true
+  cleaningUpBeforeQuit = true
   // Electron's own shutdown can occasionally stall tearing down the
   // GPU/renderer processes; force-exit rather than leave a zombie process
   // once our pactl cleanup is done (or has had a fair chance to run).
@@ -431,7 +701,15 @@ app.on('before-quit', (e) => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  for (const id of [...folderWatchers.keys()]) unwatchFolder(id)
 })
+
+/** A launch whose only purpose is to play a sound in the (possibly not-yet-running) app -
+ *  e.g. a Stream Deck button - shouldn't pop the GUI window up over whatever the user is
+ *  doing. A bare launch (no flags) still opens normally. */
+function hasPlayFlag(argv: string[]): boolean {
+  return argv.some((a) => a.startsWith('--play='))
+}
 
 app.whenReady().then(async () => {
   if (process.argv.includes('--list-sounds')) {
@@ -447,10 +725,7 @@ app.whenReady().then(async () => {
 
   app.on('second-instance', (_e, argv) => {
     handleCliArgs(argv)
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
+    if (!hasPlayFlag(argv)) showMainWindow()
   })
 
   store = new Store<Settings>({ defaults: DEFAULT_SETTINGS })
@@ -459,6 +734,8 @@ app.whenReady().then(async () => {
   await fs.mkdir(getSoundsDir(), { recursive: true })
   await fs.mkdir(getIconsDir(), { recursive: true })
   await audio.cleanupStaleModules().catch(() => {})
+  await syncAllFolders()
+  watchAllFolders()
 
   // The app requests mic access purely so navigator.mediaDevices.enumerateDevices()
   // returns real device labels (needed to match a device against the virtual sink
@@ -468,16 +745,18 @@ app.whenReady().then(async () => {
   })
 
   registerIpcHandlers()
-  createWindow()
+  createWindow(hasPlayFlag(process.argv))
+  createTray()
   probeGlobalShortcutSupport()
   syncShortcuts()
   handleCliArgs(process.argv)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(false)
+    else showMainWindow()
   })
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+// Tray-resident: no windows open just means the user closed/hid the window, not that they
+// want to quit. Quitting only happens via the explicit tray icon / Settings Quit action.
+app.on('window-all-closed', () => {})

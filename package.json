@@ -1,19 +1,21 @@
 {
   "name": "noisitron",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Noisitron is a Linux soundboard that mixes clips into a virtual microphone for Discord (and any other app) while monitoring playback through your headphones.",
   "main": "./out/main/index.js",
-  "author": "tippydial",
+  "author": "leafyalex",
+  "license": "GPL-3.0-only",
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "dist:linux": "electron-vite build && electron-builder --linux"
+    "dist:linux": "electron-vite build && electron-builder --linux && bash scripts/embed-appimage-update-info.sh"
   },
   "dependencies": {
     "electron-store": "^8.2.0",
+    "unicode-emoji-json": "^0.9.0",
     "zustand": "^4.5.5"
   },
   "devDependencies": {

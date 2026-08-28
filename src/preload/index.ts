@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AudioDevice, Folder, Settings, Sound, VirtualMicStatus, SetKeybindResult } from '../shared/types'
+import type {
+  AudioDevice,
+  Folder,
+  Settings,
+  Sound,
+  VirtualMicStatus,
+  SetKeybindResult,
+  StoreSearchResult
+} from '../shared/types'
 
 const api = {
   devices: {
@@ -26,8 +34,8 @@ const api = {
   },
   sounds: {
     import: (): Promise<Sound[]> => ipcRenderer.invoke('sounds:import'),
-    importFolder: (): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
-      ipcRenderer.invoke('sounds:importFolder'),
+    importFolder: (parentId: string | null): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
+      ipcRenderer.invoke('sounds:importFolder', parentId),
     remove: (id: string): Promise<Sound[]> => ipcRenderer.invoke('sounds:remove', id),
     setVolume: (id: string, volume: number): Promise<Sound[]> =>
       ipcRenderer.invoke('sounds:setVolume', id, volume),
@@ -44,23 +52,46 @@ const api = {
     readFile: (filePath: string): Promise<Uint8Array> =>
       ipcRenderer.invoke('sounds:readFile', filePath),
     readIcon: (filePath: string): Promise<Uint8Array> =>
-      ipcRenderer.invoke('sounds:readIcon', filePath)
+      ipcRenderer.invoke('sounds:readIcon', filePath),
+    trim: (id: string, bytes: Uint8Array): Promise<Sound[]> =>
+      ipcRenderer.invoke('sounds:trim', id, bytes)
   },
   folders: {
+    create: (name: string, parentId: string | null): Promise<Folder[]> =>
+      ipcRenderer.invoke('folders:create', name, parentId),
     rename: (id: string, name: string): Promise<Folder[]> =>
       ipcRenderer.invoke('folders:rename', id, name),
     remove: (id: string): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
-      ipcRenderer.invoke('folders:remove', id)
+      ipcRenderer.invoke('folders:remove', id),
+    sync: (id: string): Promise<{ sounds: Sound[]; folders: Folder[] }> =>
+      ipcRenderer.invoke('folders:sync', id)
+  },
+  store: {
+    search: (query: string): Promise<StoreSearchResult[]> => ipcRenderer.invoke('store:search', query),
+    preview: (mp3Path: string): Promise<Uint8Array> => ipcRenderer.invoke('store:preview', mp3Path),
+    download: (result: StoreSearchResult): Promise<{ sounds: Sound[]; folders: Folder[]; sound: Sound }> =>
+      ipcRenderer.invoke('store:download', result)
   },
   app: {
     getExecPath: (): Promise<string> => ipcRenderer.invoke('app:getExecPath'),
     getCapabilities: (): Promise<{ globalShortcuts: boolean }> =>
       ipcRenderer.invoke('app:getCapabilities'),
     openSoundsFolder: (): Promise<void> => ipcRenderer.invoke('app:openSoundsFolder'),
+    copyToClipboard: (text: string): Promise<void> => ipcRenderer.invoke('app:copyToClipboard', text),
+    quit: (): Promise<void> => ipcRenderer.invoke('app:quit'),
+    notifyReady: (): Promise<void> => ipcRenderer.invoke('app:notifyReady'),
     onPlayRequested: (callback: (soundId: string) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, soundId: string): void => callback(soundId)
       ipcRenderer.on('sounds:playRequested', listener)
       return () => ipcRenderer.removeListener('sounds:playRequested', listener)
+    },
+    onLibraryChanged: (callback: (data: { sounds: Sound[]; folders: Folder[] }) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: { sounds: Sound[]; folders: Folder[] }
+      ): void => callback(data)
+      ipcRenderer.on('library:changed', listener)
+      return () => ipcRenderer.removeListener('library:changed', listener)
     }
   }
 }

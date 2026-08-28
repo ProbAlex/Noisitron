@@ -1,0 +1,22 @@
+#!/usr/bin/make -f
+
+DEB_VERSION := $(shell dpkg-parsechangelog -SVersion | sed 's/-.*//')
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Nothing to compile - see debian/README.source for where the payload
+	# actually comes from (the project's own prebuilt release asset).
+
+override_dh_auto_install:
+	install -d debian/noisitron
+	tar xf ../noisitron_$(DEB_VERSION).orig.tar.gz -C debian/noisitron --strip-components=1
+
+override_dh_strip:
+	# The prebuilt Electron/Chromium binaries in here aren't ours to strip.
+
+override_dh_shlibdeps:
+	# Auto-detected shlibdeps would try (and mostly fail) to resolve deps for
+	# Electron/Chromium's bundled .so files; debian/control's explicit
+	# Depends: already covers what's actually needed at runtime.

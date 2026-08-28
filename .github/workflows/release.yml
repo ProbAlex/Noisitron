@@ -1,0 +1,59 @@
+name: Release
+
+# Builds the Linux installers (AppImage, .deb, .rpm) and attaches them to a
+# GitHub Release. Runs on ubuntu-latest specifically because the rpm/deb
+# packaging toolchain electron-builder bundles (fpm) is only compatible with
+# the older rpmbuild shipped by that image - newer rpmbuild (as found on
+# rolling-release distros) fails with a buildroot path mismatch.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # `--publish never` is required, not optional: electron-builder infers "this is a
+      # tagged CI build, I should publish to GitHub" from the environment itself (the git
+      # remote + CI/tag detection), independent of whether a `publish:` block exists in
+      # config or whether --publish was otherwise omitted. Without this flag it tries to
+      # publish mid-build, before GH_TOKEN is set for this step, and fails outright.
+      - name: Build Linux packages
+        run: |
+          npx electron-vite build
+          npx electron-builder --linux AppImage deb rpm --publish never
+
+      # electron-builder has no concept of the AppImageUpdate/GearLever update-info
+      # convention, so the AppImage it produces isn't discoverable by those tools.
+      # This re-packages it in place (same filename) with that info embedded, plus
+      # the accompanying .zsync sidecar - see the script for details.
+      - name: Embed AppImage update information
+        run: bash scripts/embed-appimage-update-info.sh
+
+      - name: Publish release (draft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          gh release create "v$VERSION" \
+            dist/*.AppImage dist/*.AppImage.zsync dist/*.deb dist/*.rpm \
+            --title "$VERSION" --generate-notes --draft

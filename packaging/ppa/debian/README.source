@@ -1,0 +1,10 @@
+This package's "source" (the orig tarball) is the payload of the project's
+own prebuilt noisitron_<version>_amd64.deb release asset, not a copy of the
+TypeScript/React source tree - there's no meaningful from-source build for a
+bundled Electron/Chromium app to do on Launchpad's build farm (no network
+access during the actual build, and rebuilding Chromium itself is out of
+scope for a personal project's PPA).
+
+`../build-source-package.sh <version>` builds that orig tarball from the
+matching GitHub release and lays out the source package ready for
+`dpkg-buildpackage -S`. See ../README.md for the full publish flow.

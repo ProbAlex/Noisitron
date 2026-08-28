@@ -32,7 +32,8 @@ async function pactlJson<T>(args: string[]): Promise<T> {
 interface PactlSourceOrSink {
   index: number
   name: string
-  description: string
+  /** pactl genuinely emits JSON null here for some devices, despite always having a name. */
+  description: string | null
 }
 
 interface PactlSinkInput {
@@ -66,18 +67,26 @@ async function findSinkInputIndexForModule(moduleId: string): Promise<number | n
   return null
 }
 
+/** pactl's JSON output types `description` as a string, but some sources/sinks
+ *  (ones lacking a device.description/node.description property - seen on some
+ *  generic or synthetic devices) genuinely emit `null` there. Fall back to the
+ *  internal name rather than handing the renderer a blank, unusable label. */
+function describeDevice(d: PactlSourceOrSink): AudioDevice {
+  return { name: d.name, description: d.description || d.name, index: d.index }
+}
+
 export async function listSources(): Promise<AudioDevice[]> {
   const sources = await pactlJson<PactlSourceOrSink[]>(['list', 'sources'])
   return sources
-    .filter((s) => !s.name.endsWith('.monitor'))
-    .map((s) => ({ name: s.name, description: s.description, index: s.index }))
+    .filter((s) => !s.name.endsWith('.monitor') && s.name !== VIRTUAL_SOURCE_NAME)
+    .map(describeDevice)
 }
 
 export async function listSinks(): Promise<AudioDevice[]> {
   const sinks = await pactlJson<PactlSourceOrSink[]>(['list', 'sinks'])
   return sinks
     .filter((s) => s.name !== VIRTUAL_SINK_NAME)
-    .map((s) => ({ name: s.name, description: s.description, index: s.index }))
+    .map(describeDevice)
 }
 
 /** Removes any leftover soundboard modules from a previous run that crashed / was killed. */
