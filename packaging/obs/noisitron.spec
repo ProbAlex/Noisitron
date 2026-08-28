@@ -1,5 +1,5 @@
 Name:           noisitron
-Version:        0.4.1
+Version:        0.4.2
 Release:        1
 Summary:        Soundboard that mixes clips into a virtual mic for Discord
 
