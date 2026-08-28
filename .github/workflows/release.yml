@@ -128,7 +128,7 @@ jobs:
           pkgbuild: packaging/aur/PKGBUILD
           assets: packaging/aur/.SRCINFO
           commit_username: leafyalex
-          commit_email: tippydial@gmail.com
+          commit_email: alex.dial@outlook.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to ${{ needs.check-version.outputs.version }}"
 
@@ -154,7 +154,7 @@ jobs:
           dpkg-buildpackage -S -sa -us -uc
           cd ..
           debsign -k"$KEYID" "noisitron_${VERSION}-1_source.changes"
-          dput ppa:leafyalex/noisitron "noisitron_${VERSION}-1_source.changes"
+          dput ppa:leafyalex/ppa-noisitron "noisitron_${VERSION}-1_source.changes"
 
   trigger-copr-obs:
     needs: [check-version, build-linux]
