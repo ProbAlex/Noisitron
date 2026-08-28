@@ -1,6 +1,6 @@
 appId: dev.tippydial.noisitron
 productName: Noisitron
-copyright: Copyright © tippydial
+copyright: Copyright © leafyalex
 directories:
   buildResources: build
   output: dist
@@ -16,8 +16,8 @@ linux:
     - deb
     - rpm
   category: AudioVideo
-  maintainer: tippydial
-  vendor: tippydial
+  maintainer: leafyalex
+  vendor: leafyalex
   synopsis: Soundboard that mixes clips into a virtual mic for Discord
   description: >-
     Noisitron mixes local audio clips into a virtual PulseAudio/PipeWire

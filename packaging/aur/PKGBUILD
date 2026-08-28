@@ -1,6 +1,6 @@
-# Maintainer: tippydial
+# Maintainer: leafyalex
 pkgname=noisitron-bin
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Soundboard that mixes clips into a virtual mic for Discord"
 arch=('x86_64')
