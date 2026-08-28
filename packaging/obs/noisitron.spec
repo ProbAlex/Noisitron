@@ -55,6 +55,11 @@ install -d %{buildroot}%{_bindir}
 ln -sf /opt/Noisitron/noisitron %{buildroot}%{_bindir}/noisitron
 
 find %{buildroot} \( -type f -o -type l \) | sed "s|^%{buildroot}||" > %{_builddir}/noisitron.filelist
+# Every parent directory needs explicit %dir ownership too, or OBS's filelist lint fails the
+# build with "directories not owned by a package" - plain rpmbuild doesn't enforce this, so
+# this went unnoticed until it actually ran on OBS. Harmless to also list dirs some other
+# package already owns (e.g. /usr/share/icons/hicolor) - RPM allows shared ownership fine.
+find %{buildroot} -mindepth 1 -type d | sed "s|^%{buildroot}||;s|^|%dir |" >> %{_builddir}/noisitron.filelist
 
 %files -f %{_builddir}/noisitron.filelist
 
