@@ -11,10 +11,11 @@ name: Release
 # expect a real signed GitHub webhook delivery (COPR's even 500'd on a bare
 # curl), not just a bare hit, so GitHub has to be the one calling them.
 #
-# Builds run on ubuntu-latest specifically because the rpm/deb packaging
-# toolchain electron-builder bundles (fpm) is only compatible with the older
-# rpmbuild shipped by that image - newer rpmbuild (as found on rolling-release
-# distros) fails with a buildroot path mismatch.
+# The build-linux job is pinned to ubuntu-24.04 (NOT ubuntu-latest) specifically because
+# the rpm/deb packaging toolchain electron-builder bundles (fpm) is only compatible with
+# the older rpmbuild shipped by that image - newer rpmbuild (as found on rolling-release
+# distros) fails with a buildroot path mismatch. ubuntu-latest used to be old enough, but
+# moved to 26.04 and the 0.5.0 release's .rpm build broke on it ("rpmbuild failed, exit 1").
 on:
   push:
     branches: [main]
@@ -94,7 +95,7 @@ jobs:
   build-linux:
     needs: check-version
     if: needs.check-version.outputs.is_new == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
