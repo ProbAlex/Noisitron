@@ -44,6 +44,12 @@ trap 'rm -rf "$WORKDIR"' EXIT
 echo "Extracting $APPIMAGE_PATH..."
 (cd "$WORKDIR" && env -u ELECTRON_RUN_AS_NODE "$APPIMAGE_PATH" --appimage-extract >/dev/null)
 
+# --appimage-extract (type2 runtime) leaves some directories at mode 0700, and recent
+# appimagetool builds treat that as a hard error (an AppImage run by any other user would
+# get 'Permission denied'). Older ones only warned, which is why this used to work - and it's
+# the right thing to normalise regardless, so do what the tool itself recommends.
+chmod -R a+rX "$WORKDIR/squashfs-root"
+
 echo "Re-packaging with update information..."
 APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
 rm -f "$APPIMAGE_PATH" "$APPIMAGE_PATH.zsync"
