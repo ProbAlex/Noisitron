@@ -11,12 +11,13 @@ import {
   Menu,
   nativeImage
 } from 'electron'
-import { join, extname, basename } from 'path'
-import { promises as fs, watch as watchFs, type FSWatcher } from 'fs'
+import { join, extname, basename, dirname } from 'path'
+import { existsSync, promises as fs, watch as watchFs, type FSWatcher } from 'fs'
 import { randomUUID } from 'crypto'
 import Store from 'electron-store'
 import * as audio from './audio'
 import { searchMyInstants, fetchMyInstantsAudio } from './myinstants'
+import { moveSoundInList } from '../shared/ordering'
 import { DEFAULT_SETTINGS, type Settings, type Sound, type Folder, type StoreSearchResult } from '../shared/types'
 
 const ALLOWED_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'webm']
@@ -69,6 +70,21 @@ function persistedSounds(): Sound[] {
 
 function persistedFolders(): Folder[] {
   return store.get('folders') ?? []
+}
+
+/** On the first launch of a new app version, snapshot the config file next to itself
+ *  (config.backup-from-<previous>.json) before anything migrates it. Upgrades never delete the
+ *  config or the sounds/icons folders, so this is purely a safety net - a failed copy is
+ *  ignored rather than blocking startup. */
+async function backupConfigOnUpgrade(): Promise<void> {
+  const previous = store.get('lastRunVersion') ?? null
+  const current = app.getVersion()
+  if (previous === current) return
+  if (existsSync(store.path)) {
+    const label = previous ?? 'unknown'
+    await fs.copyFile(store.path, join(dirname(store.path), `config.backup-from-${label}.json`)).catch(() => {})
+  }
+  store.set('lastRunVersion', current)
 }
 
 /** Fills in fields added after a user's library was first created. */
@@ -517,6 +533,19 @@ function registerIpcHandlers(): void {
     return sounds
   })
 
+  ipcMain.handle(
+    'sounds:move',
+    (_e, id: string, folderId: string | null, beforeId: string | null) => {
+      const folders = persistedFolders()
+      // Guard against a stale/bogus folder id from the renderer - fall back to root rather than
+      // stranding the sound in a folder that doesn't exist.
+      const safeFolderId = folderId && folders.some((f) => f.id === folderId) ? folderId : null
+      const sounds = moveSoundInList(persistedSounds(), id, safeFolderId, beforeId)
+      store.set('sounds', sounds)
+      return sounds
+    }
+  )
+
   ipcMain.handle('sounds:remove', async (_e, id: string) => {
     const sounds = persistedSounds()
     const target = sounds.find((s) => s.id === id)
@@ -729,6 +758,7 @@ app.whenReady().then(async () => {
   })
 
   store = new Store<Settings>({ defaults: DEFAULT_SETTINGS })
+  await backupConfigOnUpgrade()
   migrateSounds()
 
   await fs.mkdir(getSoundsDir(), { recursive: true })

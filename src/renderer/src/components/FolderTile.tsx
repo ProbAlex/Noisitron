@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Folder } from '@shared/types'
 import { useSoundboardStore } from '../store/soundboard'
+import { useFolderDropTarget } from '../utils/dnd'
 
 interface FolderTileProps {
   folder: Folder
@@ -16,6 +17,7 @@ export function FolderTile({ folder, itemCount }: FolderTileProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(folder.name)
   const [syncing, setSyncing] = useState(false)
+  const drop = useFolderDropTarget(folder.id)
 
   function commit(): void {
     setEditing(false)
@@ -26,8 +28,13 @@ export function FolderTile({ folder, itemCount }: FolderTileProps) {
 
   return (
     <div
+      {...drop.handlers}
       onClick={() => !editing && selectFolder(folder.id)}
-      className="group relative flex cursor-pointer flex-col items-center gap-2.5 rounded-2xl border border-base-700 bg-base-850 p-4 pt-5 text-center transition-all duration-150 hover:-translate-y-0.5 hover:border-base-600 hover:bg-base-800 hover:shadow-lg hover:shadow-black/20"
+      className={`group relative flex cursor-pointer flex-col items-center gap-2.5 rounded-2xl border p-4 pt-5 text-center transition-all duration-150 ${
+        drop.over
+          ? 'border-accent bg-accent-soft/50 shadow-[0_0_0_1px_theme(colors.accent.DEFAULT)]'
+          : 'border-base-700 bg-base-850 hover:-translate-y-0.5 hover:border-base-600 hover:bg-base-800 hover:shadow-lg hover:shadow-black/20'
+      }`}
     >
       {folder.sourcePath && (
         <button

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AudioDevice, Folder, Sound, StoreSearchResult, VirtualMicStatus } from '@shared/types'
 import { VIRTUAL_MIC_SINK_DESCRIPTION } from '@shared/types'
+import { moveSoundInList } from '@shared/ordering'
 import { soundPlayer } from '../audio/player'
 import { findOutputDeviceId } from '../audio/deviceMatch'
 
@@ -26,6 +27,12 @@ interface SoundboardState {
   activeSoundIds: Set<string>
 
   globalShortcutsSupported: boolean
+
+  /** id of the sound tile currently being dragged (drag-and-drop reorder / move to folder).
+   *  Kept in the store because dataTransfer contents aren't readable during dragover. */
+  draggingSoundId: string | null
+  setDraggingSoundId: (id: string | null) => void
+  moveSound: (id: string, folderId: string | null, beforeId: string | null) => Promise<void>
 
   contextMenu: { soundId: string; x: number; y: number } | null
   openSoundMenu: (soundId: string, x: number, y: number) => void
@@ -90,6 +97,15 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   activeSoundIds: new Set(),
 
   globalShortcutsSupported: true,
+
+  draggingSoundId: null,
+  setDraggingSoundId: (id) => set({ draggingSoundId: id }),
+  moveSound: async (id, folderId, beforeId) => {
+    // Optimistic: apply the same pure move the main process will persist.
+    set((state) => ({ sounds: moveSoundInList(state.sounds, id, folderId, beforeId) }))
+    const sounds = await window.api.sounds.move(id, folderId, beforeId)
+    set({ sounds })
+  },
 
   contextMenu: null,
   openSoundMenu: (soundId, x, y) => set({ contextMenu: { soundId, x, y } }),

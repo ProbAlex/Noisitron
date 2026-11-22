@@ -43,6 +43,8 @@ const api = {
       ipcRenderer.invoke('sounds:rename', id, name),
     setFolder: (id: string, folderId: string | null): Promise<Sound[]> =>
       ipcRenderer.invoke('sounds:setFolder', id, folderId),
+    move: (id: string, folderId: string | null, beforeId: string | null): Promise<Sound[]> =>
+      ipcRenderer.invoke('sounds:move', id, folderId, beforeId),
     setEmoji: (id: string, emoji: string | null): Promise<Sound[]> =>
       ipcRenderer.invoke('sounds:setEmoji', id, emoji),
     pickImage: (id: string): Promise<Sound[]> => ipcRenderer.invoke('sounds:pickImage', id),

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Folder } from '@shared/types'
 import { useSoundboardStore } from '../store/soundboard'
+import { useFolderDropTarget } from '../utils/dnd'
 
 const COLLAPSED_KEY = 'noisitron.sidebarCollapsed'
 
@@ -17,6 +18,7 @@ function FolderTreeNode({ folder, depth }: { folder: Folder; depth: number }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(folder.name)
   const [syncing, setSyncing] = useState(false)
+  const drop = useFolderDropTarget(folder.id)
 
   const children = allFolders.filter((f) => f.parentId === folder.id)
   const selected = selectedFolderId === folder.id
@@ -32,10 +34,15 @@ function FolderTreeNode({ folder, depth }: { folder: Folder; depth: number }) {
   return (
     <div>
       <div
+        {...drop.handlers}
         onClick={() => !editing && selectFolder(folder.id)}
         style={{ paddingLeft: `${depth * 14 + 6}px` }}
         className={`group flex items-center gap-1 rounded-lg py-1 pr-2 text-sm transition-colors ${
-          selected ? 'bg-accent-soft text-slate-100' : 'text-slate-400 hover:bg-base-800 hover:text-slate-200'
+          drop.over
+            ? 'bg-accent-soft text-slate-100 ring-1 ring-accent'
+            : selected
+              ? 'bg-accent-soft text-slate-100'
+              : 'text-slate-400 hover:bg-base-800 hover:text-slate-200'
         }`}
       >
         <button
@@ -120,6 +127,7 @@ export function Sidebar() {
   const selectFolder = useSoundboardStore((s) => s.selectFolder)
   const importFolder = useSoundboardStore((s) => s.importFolder)
   const createFolder = useSoundboardStore((s) => s.createFolder)
+  const rootDrop = useFolderDropTarget(null)
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -150,10 +158,15 @@ export function Sidebar() {
           »
         </button>
         <button
+          {...rootDrop.handlers}
           onClick={() => selectFolder(null)}
           title="All Sounds"
           className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm ${
-            selectedFolderId === null ? 'bg-accent-soft text-slate-100' : 'text-slate-400 hover:bg-base-800'
+            rootDrop.over
+              ? 'bg-accent-soft text-slate-100 ring-1 ring-accent'
+              : selectedFolderId === null
+                ? 'bg-accent-soft text-slate-100'
+                : 'text-slate-400 hover:bg-base-800'
           }`}
         >
           🔊
@@ -185,11 +198,14 @@ export function Sidebar() {
       </div>
 
       <button
+        {...rootDrop.handlers}
         onClick={() => selectFolder(null)}
         className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
-          selectedFolderId === null
-            ? 'bg-accent-soft text-slate-100'
-            : 'text-slate-400 hover:bg-base-800 hover:text-slate-200'
+          rootDrop.over
+            ? 'bg-accent-soft text-slate-100 ring-1 ring-accent'
+            : selectedFolderId === null
+              ? 'bg-accent-soft text-slate-100'
+              : 'text-slate-400 hover:bg-base-800 hover:text-slate-200'
         }`}
       >
         <span className="text-sm">🔊</span>
