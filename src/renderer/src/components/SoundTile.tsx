@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type DragEvent } from 'react'
 import type { Sound } from '@shared/types'
 import { useSoundboardStore } from '../store/soundboard'
 import { getIconObjectUrl } from '../utils/iconUrl'
@@ -7,17 +7,25 @@ import { formatAccelerator } from '../utils/accelerator'
 interface SoundTileProps {
   sound: Sound
   playing: boolean
+  /** id of the sound right after this one in the current folder, or null if this is the last -
+   *  needed to turn "dropped on my right half" into an insert position. */
+  nextSoundId: string | null
 }
 
-export function SoundTile({ sound, playing }: SoundTileProps) {
+export function SoundTile({ sound, playing, nextSoundId }: SoundTileProps) {
   const playSound = useSoundboardStore((s) => s.playSound)
   const stopSound = useSoundboardStore((s) => s.stopSound)
   const renameSound = useSoundboardStore((s) => s.renameSound)
   const openSoundMenu = useSoundboardStore((s) => s.openSoundMenu)
+  const moveSound = useSoundboardStore((s) => s.moveSound)
+  const setDraggingSoundId = useSoundboardStore((s) => s.setDraggingSoundId)
+  const isDragging = useSoundboardStore((s) => s.draggingSoundId === sound.id)
 
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(sound.name)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  /** Which side of this tile a dragged sound would land on, while one is hovering over it. */
+  const [dropSide, setDropSide] = useState<'before' | 'after' | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -38,6 +46,35 @@ export function SoundTile({ sound, playing }: SoundTileProps) {
     else void playSound(sound)
   }
 
+  function sideOf(e: DragEvent): 'before' | 'after' {
+    const rect = e.currentTarget.getBoundingClientRect()
+    return e.clientX < rect.left + rect.width / 2 ? 'before' : 'after'
+  }
+
+  function onDragOver(e: DragEvent): void {
+    const dragging = useSoundboardStore.getState().draggingSoundId
+    if (!dragging) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    setDropSide(dragging === sound.id ? null : sideOf(e))
+  }
+
+  function onDrop(e: DragEvent): void {
+    const dragging = useSoundboardStore.getState().draggingSoundId
+    const side = sideOf(e)
+    setDropSide(null)
+    if (!dragging) return
+    e.preventDefault()
+    e.stopPropagation()
+    setDraggingSoundId(null)
+    if (dragging === sound.id) return
+    const beforeId = side === 'before' ? sound.id : nextSoundId
+    // Dropping right where it already sits (e.g. "after" the tile just before it) is a no-op.
+    if (beforeId === dragging) return
+    void moveSound(dragging, sound.folderId, beforeId)
+  }
+
   function commitRename(): void {
     setEditing(false)
     const trimmed = draftName.trim()
@@ -47,16 +84,41 @@ export function SoundTile({ sound, playing }: SoundTileProps) {
 
   return (
     <div
+      draggable={!editing}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', sound.name)
+        setDraggingSoundId(sound.id)
+      }}
+      onDragEnd={() => {
+        setDraggingSoundId(null)
+        setDropSide(null)
+      }}
+      onDragOver={onDragOver}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropSide(null)
+      }}
+      onDrop={onDrop}
       onContextMenu={(e) => {
         e.preventDefault()
         openSoundMenu(sound.id, e.clientX, e.clientY)
       }}
       className={`group relative flex flex-col items-center gap-2.5 rounded-2xl border p-4 pt-5 text-center transition-all duration-150 ${
+        isDragging ? 'opacity-40' : ''
+      } ${
         playing
           ? 'border-accent bg-accent-soft/50 shadow-[0_0_0_1px_theme(colors.accent.DEFAULT),0_10px_28px_-10px_theme(colors.accent.DEFAULT)]'
           : 'border-base-700 bg-base-850 hover:-translate-y-0.5 hover:border-base-600 hover:bg-base-800 hover:shadow-lg hover:shadow-black/20'
       }`}
     >
+      {dropSide && (
+        <span
+          className={`pointer-events-none absolute -bottom-1 -top-1 w-1 rounded-full bg-accent ${
+            dropSide === 'before' ? '-left-2' : '-right-2'
+          }`}
+        />
+      )}
+
       {sound.keybind && (
         <span
           title={`Shortcut: ${formatAccelerator(sound.keybind)}`}

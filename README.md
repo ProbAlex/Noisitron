@@ -24,6 +24,7 @@ Noisitron creates a virtual PulseAudio/PipeWire microphone. Anything you trigger
 
 - Virtual mic routing over PulseAudio/PipeWire, with independent mic/headphone volume control
 - Nested folders — organize sounds into folders inside folders, browsed like a file manager
+- Drag and drop — reorder sounds within a folder, or drag them onto a folder (tile, sidebar, or breadcrumb) to move them
 - Global keybinds, plus CLI/Stream Deck triggering (`noisitron --play <sound>`)
 - Per-sound volume, custom emoji or image icon, and a built-in waveform trim editor
 - Built-in sound store — search and download clips from MyInstants directly into your library

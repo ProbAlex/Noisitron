@@ -64,6 +64,9 @@ export interface Settings {
   /** id of the auto-created "Store" folder downloads land in; tracked by id (not name) so
    *  renaming that folder doesn't orphan future downloads. Null until the first download. */
   storeFolderId: string | null
+  /** app version that last opened this config; when it differs on launch, the config is
+   *  backed up before any migration runs. Null for configs from before this was tracked. */
+  lastRunVersion: string | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -73,7 +76,8 @@ export const DEFAULT_SETTINGS: Settings = {
   headphoneSinkName: null,
   globalMicVolume: 1,
   globalHeadphoneVolume: 1,
-  storeFolderId: null
+  storeFolderId: null,
+  lastRunVersion: null
 }
 
 /** One search hit from the MyInstants sound store. */

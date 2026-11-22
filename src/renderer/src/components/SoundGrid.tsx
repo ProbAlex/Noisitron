@@ -1,6 +1,7 @@
 import { useSoundboardStore } from '../store/soundboard'
 import { SoundTile } from './SoundTile'
 import { FolderTile } from './FolderTile'
+import { useFolderDropTarget } from '../utils/dnd'
 
 export function SoundGrid() {
   const sounds = useSoundboardStore((s) => s.sounds)
@@ -8,6 +9,9 @@ export function SoundGrid() {
   const selectedFolderId = useSoundboardStore((s) => s.selectedFolderId)
   const activeSoundIds = useSoundboardStore((s) => s.activeSoundIds)
   const importSounds = useSoundboardStore((s) => s.importSounds)
+
+  // Dropping on the grid's empty space sends the sound to the end of the folder being viewed.
+  const gridDrop = useFolderDropTarget(selectedFolderId, true)
 
   const subfolders = folders.filter((f) => f.parentId === selectedFolderId)
   const directSounds = sounds.filter((s) => s.folderId === selectedFolderId)
@@ -45,7 +49,10 @@ export function SoundGrid() {
   }
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+    <div
+      {...gridDrop.handlers}
+      className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3"
+    >
       {subfolders.map((folder) => (
         <FolderTile
           key={folder.id}
@@ -56,8 +63,13 @@ export function SoundGrid() {
           }
         />
       ))}
-      {directSounds.map((sound) => (
-        <SoundTile key={sound.id} sound={sound} playing={activeSoundIds.has(sound.id)} />
+      {directSounds.map((sound, i) => (
+        <SoundTile
+          key={sound.id}
+          sound={sound}
+          playing={activeSoundIds.has(sound.id)}
+          nextSoundId={directSounds[i + 1]?.id ?? null}
+        />
       ))}
       <button
         onClick={() => void importSounds()}
