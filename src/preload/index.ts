@@ -25,6 +25,8 @@ const api = {
       ipcRenderer.invoke('virtualMic:setMicVolume', percent),
     setNoiseSuppression: (mode: NoiseSuppressionMode): Promise<VirtualMicStatus> =>
       ipcRenderer.invoke('virtualMic:setNoiseSuppression', mode),
+    setNoiseSuppressionStrength: (percent: number): Promise<void> =>
+      ipcRenderer.invoke('virtualMic:setNoiseSuppressionStrength', percent),
     onStatusChanged: (callback: (status: VirtualMicStatus) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, status: VirtualMicStatus): void => callback(status)
       ipcRenderer.on('virtualMic:statusChanged', listener)

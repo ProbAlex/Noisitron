@@ -41,6 +41,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const setMicSourceName = useSoundboardStore((s) => s.setMicSourceName)
   const noiseSuppression = useSoundboardStore((s) => s.noiseSuppression)
   const setNoiseSuppression = useSoundboardStore((s) => s.setNoiseSuppression)
+  const noiseSuppressionStrength = useSoundboardStore((s) => s.noiseSuppressionStrength)
+  const setNoiseSuppressionStrength = useSoundboardStore((s) => s.setNoiseSuppressionStrength)
   const setHeadphoneSinkName = useSoundboardStore((s) => s.setHeadphoneSinkName)
   const micStatus = useSoundboardStore((s) => s.micStatus)
   const setMicInputVolumePercent = useSoundboardStore((s) => s.setMicInputVolumePercent)
@@ -120,21 +122,46 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             <span className="font-medium text-slate-300">Noise suppression</span>
             <select
               value={noiseSuppression}
-              onChange={(e) => void setNoiseSuppression(e.target.value === 'local' ? 'local' : 'none')}
+              onChange={(e) =>
+                void setNoiseSuppression(
+                  e.target.value === 'local' || e.target.value === 'local-light' ? e.target.value : 'none'
+                )
+              }
               className="rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-slate-200 outline-none focus:border-accent"
             >
               <option value="none">None</option>
               <option value="local">Local (on this device)</option>
+              <option value="local-light">Local light (more natural)</option>
             </select>
             <span className="text-xs text-slate-500">
               {noiseSuppression === 'local'
                 ? 'Removes background noise from your mic using a model that runs entirely on this computer — nothing is uploaded.'
-                : 'Your mic is passed through exactly as it is.'}
+                : noiseSuppression === 'local-light'
+                  ? 'Same on-device model, but keeps more of your natural voice while you talk, so it cuts off soft sounds and word endings less. Leaves a little more noise in.'
+                  : 'Your mic is passed through exactly as it is.'}
             </span>
             {micStatus?.noiseSuppressionError && (
               <span className="text-xs text-amber-300">{micStatus.noiseSuppressionError}</span>
             )}
           </label>
+
+          {noiseSuppression !== 'none' && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-slate-300">Noise suppression strength</span>
+              <VolumeSlider
+                value={noiseSuppressionStrength}
+                min={0}
+                max={100}
+                step={1}
+                unit="percent"
+                onChange={setNoiseSuppressionStrength}
+              />
+              <span className="text-xs text-slate-500">
+                Lower it if your voice sounds robotic or choppy: some of your original mic is mixed back in. Higher removes
+                more noise.
+              </span>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-slate-300">Mic input level</span>

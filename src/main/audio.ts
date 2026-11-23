@@ -1,5 +1,6 @@
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import {
+  DEFAULT_NOISE_SUPPRESSION_STRENGTH,
   VIRTUAL_MIC_SINK_DESCRIPTION,
   type AudioDevice,
   type NoiseSuppressionMode,
@@ -130,9 +131,11 @@ interface InternalState {
   /** the system default input, if usable as a mic (see isUsableMicSource) */
   defaultSourceName: string | null
   noiseSuppression: NoiseSuppressionMode
+  /** 0-100, the noise suppression strength slider */
+  noiseSuppressionStrength: number
   micLoopbackVolumePercent: number
   /** the running on-device denoise pipeline, if any (replaces the loopback while it runs) */
-  denoise: { sourceName: string; pipe: DenoisePipe } | null
+  denoise: { sourceName: string; light: boolean; pipe: DenoisePipe } | null
   noiseSuppressionError: string | null
 }
 
@@ -145,6 +148,7 @@ const state: InternalState = {
   selectedMicSource: null,
   defaultSourceName: null,
   noiseSuppression: 'none',
+  noiseSuppressionStrength: DEFAULT_NOISE_SUPPRESSION_STRENGTH,
   micLoopbackVolumePercent: 100,
   denoise: null,
   noiseSuppressionError: null
@@ -228,7 +232,8 @@ export function getStatus(): VirtualMicStatus {
 
 export async function createVirtualMic(
   micSourceName: string | null,
-  noiseSuppression: NoiseSuppressionMode
+  noiseSuppression: NoiseSuppressionMode,
+  noiseSuppressionStrength: number
 ): Promise<VirtualMicStatus> {
   if (state.sinkModuleId === null) {
     await cleanupStaleModules()
@@ -244,6 +249,7 @@ export async function createVirtualMic(
   }
   state.selectedMicSource = micSourceName
   state.noiseSuppression = noiseSuppression
+  state.noiseSuppressionStrength = noiseSuppressionStrength
   await applyMicRouting()
   return getStatus()
 }
@@ -270,7 +276,7 @@ let onRoutingChanged: ((status: VirtualMicStatus) => void) | null = null
 /** Makes the mic path match the current settings, picking the chosen mic (or the system default
  *  input if none is chosen):
  *  - noise suppression 'none':  a pactl loopback straight into the virtual mic.
- *  - noise suppression 'local': the on-device denoise pipe instead (a loopback as well would play
+ *  - noise suppression 'local' / 'local-light': the on-device denoise pipe instead (a loopback as well would play
  *    the voice twice). If the pipe can't run, fall back to the plain loopback so the user is never
  *    left with no mic at all, and surface why.
  *  Serialized, because it's triggered from IPC calls and from the default-source watcher. */
@@ -283,8 +289,9 @@ async function doApplyMicRouting(): Promise<void> {
   state.defaultSourceName = await resolveDefaultSource()
   const target = state.sinkModuleId !== null ? state.selectedMicSource ?? state.defaultSourceName : null
 
-  let wantDenoise = target !== null && state.noiseSuppression === 'local'
-  if (!wantDenoise || state.denoise?.sourceName !== target) {
+  let wantDenoise = target !== null && state.noiseSuppression !== 'none'
+  const wantLight = state.noiseSuppression === 'local-light'
+  if (!wantDenoise || state.denoise?.sourceName !== target || state.denoise.light !== wantLight) {
     if (state.denoise) stopDenoise()
   }
   if (wantDenoise && target && !state.denoise) {
@@ -293,9 +300,10 @@ async function doApplyMicRouting(): Promise<void> {
         target,
         VIRTUAL_SINK_NAME,
         state.micLoopbackVolumePercent / 100,
+        { light: wantLight, strength: state.noiseSuppressionStrength / 100 },
         (reason) => handleDenoiseDied(target, reason)
       )
-      state.denoise = { sourceName: target, pipe }
+      state.denoise = { sourceName: target, light: wantLight, pipe }
       state.noiseSuppressionError = null
     } catch (err) {
       state.noiseSuppressionError = `Noise suppression couldn't start (${err instanceof Error ? err.message : String(err)}).`
@@ -339,6 +347,12 @@ export async function setNoiseSuppression(mode: NoiseSuppressionMode): Promise<V
   state.noiseSuppressionError = null
   await applyMicRouting()
   return getStatus()
+}
+
+/** Live update of the noise suppression strength slider; no pipeline restart needed. */
+export function setNoiseSuppressionStrength(percent: number): void {
+  state.noiseSuppressionStrength = percent
+  state.denoise?.pipe.setStrength(percent / 100)
 }
 
 let subscribeProcess: ChildProcess | null = null

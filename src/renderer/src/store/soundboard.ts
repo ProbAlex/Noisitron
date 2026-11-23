@@ -7,7 +7,7 @@ import type {
   StoreSearchResult,
   VirtualMicStatus
 } from '@shared/types'
-import { VIRTUAL_MIC_SINK_DESCRIPTION } from '@shared/types'
+import { DEFAULT_NOISE_SUPPRESSION_STRENGTH, VIRTUAL_MIC_SINK_DESCRIPTION } from '@shared/types'
 import { moveSoundInList } from '@shared/ordering'
 import { soundPlayer } from '../audio/player'
 import { findOutputDeviceId } from '../audio/deviceMatch'
@@ -27,6 +27,7 @@ interface SoundboardState {
 
   micSourceName: string | null
   noiseSuppression: NoiseSuppressionMode
+  noiseSuppressionStrength: number
   headphoneSinkName: string | null
   globalMicVolume: number
   globalHeadphoneVolume: number
@@ -80,6 +81,7 @@ interface SoundboardState {
 
   setMicSourceName: (name: string | null) => Promise<void>
   setNoiseSuppression: (mode: NoiseSuppressionMode) => Promise<void>
+  setNoiseSuppressionStrength: (percent: number) => void
   setHeadphoneSinkName: (name: string | null) => Promise<void>
   setGlobalMicVolume: (v: number) => void
   setGlobalHeadphoneVolume: (v: number) => void
@@ -99,6 +101,7 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
 
   micSourceName: null,
   noiseSuppression: 'none',
+  noiseSuppressionStrength: DEFAULT_NOISE_SUPPRESSION_STRENGTH,
   headphoneSinkName: null,
   globalMicVolume: 1,
   globalHeadphoneVolume: 1,
@@ -183,6 +186,7 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
       folders: settings.folders,
       micSourceName: settings.micSourceName,
       noiseSuppression: settings.noiseSuppression ?? 'none',
+      noiseSuppressionStrength: settings.noiseSuppressionStrength ?? DEFAULT_NOISE_SUPPRESSION_STRENGTH,
       headphoneSinkName: settings.headphoneSinkName,
       globalMicVolume: settings.globalMicVolume,
       globalHeadphoneVolume: settings.globalHeadphoneVolume,
@@ -358,6 +362,11 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
     set({ noiseSuppression: mode })
     const status = await window.api.virtualMic.setNoiseSuppression(mode)
     set({ micStatus: status })
+  },
+
+  setNoiseSuppressionStrength: (percent) => {
+    set({ noiseSuppressionStrength: percent })
+    void window.api.virtualMic.setNoiseSuppressionStrength(percent)
   },
 
   setHeadphoneSinkName: async (name) => {
