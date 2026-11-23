@@ -23,6 +23,7 @@ Noisitron creates a virtual PulseAudio/PipeWire microphone. Anything you trigger
 ## Features
 
 - Virtual mic routing over PulseAudio/PipeWire, with independent mic/headphone volume control
+- Follows your system default microphone automatically, with optional on-device noise suppression (RNNoise) - nothing leaves your machine
 - Nested folders — organize sounds into folders inside folders, browsed like a file manager
 - Drag and drop — reorder sounds within a folder, or drag them onto a folder (tile, sidebar, or breadcrumb) to move them
 - Global keybinds, plus CLI/Stream Deck triggering (`noisitron --play <sound>`)

@@ -1,5 +1,12 @@
 import { create } from 'zustand'
-import type { AudioDevice, Folder, Sound, StoreSearchResult, VirtualMicStatus } from '@shared/types'
+import type {
+  AudioDevice,
+  Folder,
+  NoiseSuppressionMode,
+  Sound,
+  StoreSearchResult,
+  VirtualMicStatus
+} from '@shared/types'
 import { VIRTUAL_MIC_SINK_DESCRIPTION } from '@shared/types'
 import { moveSoundInList } from '@shared/ordering'
 import { soundPlayer } from '../audio/player'
@@ -19,6 +26,7 @@ interface SoundboardState {
   sinkDevices: AudioDevice[]
 
   micSourceName: string | null
+  noiseSuppression: NoiseSuppressionMode
   headphoneSinkName: string | null
   globalMicVolume: number
   globalHeadphoneVolume: number
@@ -71,6 +79,7 @@ interface SoundboardState {
   stopSound: (id: string) => void
 
   setMicSourceName: (name: string | null) => Promise<void>
+  setNoiseSuppression: (mode: NoiseSuppressionMode) => Promise<void>
   setHeadphoneSinkName: (name: string | null) => Promise<void>
   setGlobalMicVolume: (v: number) => void
   setGlobalHeadphoneVolume: (v: number) => void
@@ -89,6 +98,7 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   sinkDevices: [],
 
   micSourceName: null,
+  noiseSuppression: 'none',
   headphoneSinkName: null,
   globalMicVolume: 1,
   globalHeadphoneVolume: 1,
@@ -136,6 +146,14 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
     // Pushed whenever a live-watched folder picks up changes on disk (no relaunch needed).
     window.api.app.onLibraryChanged(({ sounds, folders }) => set({ sounds, folders }))
 
+    // Main pushes a fresh status when the OS default input changes (it has already re-pointed the
+    // mic path itself). Refresh the device lists too: a newly plugged-in headset is both a new
+    // source and the new default, and Settings needs its name.
+    window.api.virtualMic.onStatusChanged((status) => {
+      set({ micStatus: status })
+      void get().refreshDevices()
+    })
+
     soundPlayer.setActiveChangeListener((ids) => set({ activeSoundIds: ids }))
 
     try {
@@ -164,6 +182,7 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
       sounds: settings.sounds,
       folders: settings.folders,
       micSourceName: settings.micSourceName,
+      noiseSuppression: settings.noiseSuppression ?? 'none',
       headphoneSinkName: settings.headphoneSinkName,
       globalMicVolume: settings.globalMicVolume,
       globalHeadphoneVolume: settings.globalHeadphoneVolume,
@@ -332,6 +351,12 @@ export const useSoundboardStore = create<SoundboardState>((set, get) => ({
   setMicSourceName: async (name) => {
     set({ micSourceName: name })
     const status = await window.api.virtualMic.setMicSource(name)
+    set({ micStatus: status })
+  },
+
+  setNoiseSuppression: async (mode) => {
+    set({ noiseSuppression: mode })
+    const status = await window.api.virtualMic.setNoiseSuppression(mode)
     set({ micStatus: status })
   },
 

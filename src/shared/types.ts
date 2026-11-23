@@ -3,6 +3,11 @@
  *  Web Audio / <audio> sink target. */
 export const VIRTUAL_MIC_SINK_DESCRIPTION = 'Noisitron_Virtual_Mic'
 
+/** How the microphone is cleaned up before it's mixed into the virtual mic.
+ *  - none:  straight PulseAudio/PipeWire loopback, no processing.
+ *  - local: processed on this machine (RNNoise running in the main process), nothing leaves the device. */
+export type NoiseSuppressionMode = 'none' | 'local'
+
 export interface AudioDevice {
   /** pactl/pipewire node name, e.g. alsa_input.pci-..._Mic1__source */
   name: string
@@ -17,8 +22,18 @@ export interface VirtualMicStatus {
   sinkName: string
   /** name of the standalone virtual microphone source Discord (or any app) should select as input */
   monitorSourceName: string
+  /** the input currently feeding the virtual mic (through the pactl loopback, or through the
+   *  noise-suppression pipe); null when there is no usable mic. */
   micSourceName: string | null
   micLoopbackVolumePercent: number
+  /** the system's current default input, when it's usable as a mic (never our own virtual mic
+   *  or a monitor source); null if there isn't one. Used when no mic is explicitly selected. */
+  defaultSourceName: string | null
+  /** true while the on-device denoiser is actually processing the mic. */
+  noiseSuppressionActive: boolean
+  /** why local noise suppression isn't running even though it's selected (the mic is then passed
+   *  through unprocessed instead), or null. */
+  noiseSuppressionError: string | null
 }
 
 export interface Sound {
@@ -57,7 +72,9 @@ export interface Folder {
 export interface Settings {
   sounds: Sound[]
   folders: Folder[]
+  /** explicitly chosen microphone; null means "System default" (follows the OS default input). */
   micSourceName: string | null
+  noiseSuppression: NoiseSuppressionMode
   headphoneSinkName: string | null
   globalMicVolume: number
   globalHeadphoneVolume: number
@@ -73,6 +90,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sounds: [],
   folders: [],
   micSourceName: null,
+  noiseSuppression: 'none',
   headphoneSinkName: null,
   globalMicVolume: 1,
   globalHeadphoneVolume: 1,
