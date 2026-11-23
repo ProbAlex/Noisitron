@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process'
 import type { Rnnoise } from '@shiguredo/rnnoise-wasm'
+import { DenoiseMixer } from './denoiseMix'
 
 /**
  * On-device noise suppression for the microphone, run in the main process:
@@ -64,6 +65,8 @@ function loadRnnoise(): Promise<Rnnoise> {
 export interface DenoisePipe {
   /** Linear gain applied after denoising (the "Mic input level" setting), 1 = unity. */
   setGain: (gain: number) => void
+  /** 0..1: how much of the denoised signal is mixed in (the rest is the untouched mic). */
+  setStrength: (strength: number) => void
   stop: () => void
 }
 
@@ -75,6 +78,7 @@ export async function startDenoisePipe(
   sourceName: string,
   sinkName: string,
   initialGain: number,
+  options: { light: boolean; strength: number },
   onExit: (reason: string) => void
 ): Promise<DenoisePipe> {
   const rnnoise = await loadRnnoise()
@@ -94,6 +98,8 @@ export async function startDenoisePipe(
   )
 
   let gain = initialGain
+  let strength = Math.min(1, Math.max(0, options.strength))
+  const mixer = new DenoiseMixer(frameSize, options.light)
   let stopped = false
   let pending: Buffer = Buffer.alloc(0)
   const frame = new Float32Array(frameSize)
@@ -160,7 +166,9 @@ export async function startDenoisePipe(
       // RNNoise expects 16-bit-PCM-scaled samples (not -1..1), which is exactly what s16le gives.
       for (let i = 0; i < frameSize; i++) frame[i] = pending.readInt16LE(i * 2)
       pending = pending.subarray(frameBytes)
-      state.processFrame(frame)
+      const dry = frame.slice()
+      const vad = state.processFrame(frame)
+      mixer.mix(frame, dry, vad, strength)
       const out = Buffer.allocUnsafe(frameBytes)
       for (let i = 0; i < frameSize; i++) {
         out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(frame[i] * gain))), i * 2)
@@ -178,6 +186,9 @@ export async function startDenoisePipe(
   return {
     setGain: (g) => {
       gain = Math.max(0, g)
+    },
+    setStrength: (s) => {
+      strength = Math.min(1, Math.max(0, s))
     },
     stop: () => {
       if (!stopped) shutdown()

@@ -428,7 +428,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('virtualMic:status', () => audio.getStatus())
   ipcMain.handle('virtualMic:create', () =>
-    audio.createVirtualMic(store.get('micSourceName'), store.get('noiseSuppression'))
+    audio.createVirtualMic(
+      store.get('micSourceName'),
+      store.get('noiseSuppression'),
+      store.get('noiseSuppressionStrength')
+    )
   )
   ipcMain.handle('virtualMic:destroy', () => audio.destroyVirtualMic())
   ipcMain.handle('virtualMic:setMicSource', async (_e, sourceName: string | null) => {
@@ -436,9 +440,15 @@ function registerIpcHandlers(): void {
     return audio.setMicSource(sourceName)
   })
   ipcMain.handle('virtualMic:setNoiseSuppression', async (_e, mode: NoiseSuppressionMode) => {
-    const safeMode: NoiseSuppressionMode = mode === 'local' ? 'local' : 'none'
+    const safeMode: NoiseSuppressionMode =
+      mode === 'local' || mode === 'local-light' ? mode : 'none'
     store.set('noiseSuppression', safeMode)
     return audio.setNoiseSuppression(safeMode)
+  })
+  ipcMain.handle('virtualMic:setNoiseSuppressionStrength', (_e, percent: number) => {
+    const safe = Number.isFinite(percent) ? Math.min(100, Math.max(0, Math.round(percent))) : 100
+    store.set('noiseSuppressionStrength', safe)
+    audio.setNoiseSuppressionStrength(safe)
   })
   ipcMain.handle('virtualMic:setMicVolume', async (_e, percent: number) => {
     return audio.setMicLoopbackVolumePercent(percent)

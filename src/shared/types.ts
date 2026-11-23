@@ -5,8 +5,14 @@ export const VIRTUAL_MIC_SINK_DESCRIPTION = 'Noisitron_Virtual_Mic'
 
 /** How the microphone is cleaned up before it's mixed into the virtual mic.
  *  - none:  straight PulseAudio/PipeWire loopback, no processing.
- *  - local: processed on this machine (RNNoise running in the main process), nothing leaves the device. */
-export type NoiseSuppressionMode = 'none' | 'local'
+ *  - local: processed on this machine (RNNoise running in the main process), nothing leaves the device.
+ *  - local-light: same model, but keeps more of the original voice while you're speaking, so it
+ *    sounds more natural and cuts soft consonants / word endings less, at the cost of leaving a
+ *    little more noise in. */
+export type NoiseSuppressionMode = 'none' | 'local' | 'local-light'
+
+/** Default for the noise suppression "Strength" slider (percent of processed signal in the mix). */
+export const DEFAULT_NOISE_SUPPRESSION_STRENGTH = 75
 
 export interface AudioDevice {
   /** pactl/pipewire node name, e.g. alsa_input.pci-..._Mic1__source */
@@ -75,6 +81,8 @@ export interface Settings {
   /** explicitly chosen microphone; null means "System default" (follows the OS default input). */
   micSourceName: string | null
   noiseSuppression: NoiseSuppressionMode
+  /** 0-100: how much of the processed signal is mixed in (the rest is the untouched mic). */
+  noiseSuppressionStrength: number
   headphoneSinkName: string | null
   globalMicVolume: number
   globalHeadphoneVolume: number
@@ -91,6 +99,7 @@ export const DEFAULT_SETTINGS: Settings = {
   folders: [],
   micSourceName: null,
   noiseSuppression: 'none',
+  noiseSuppressionStrength: DEFAULT_NOISE_SUPPRESSION_STRENGTH,
   headphoneSinkName: null,
   globalMicVolume: 1,
   globalHeadphoneVolume: 1,
