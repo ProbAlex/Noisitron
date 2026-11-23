@@ -39,6 +39,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const micSourceName = useSoundboardStore((s) => s.micSourceName)
   const headphoneSinkName = useSoundboardStore((s) => s.headphoneSinkName)
   const setMicSourceName = useSoundboardStore((s) => s.setMicSourceName)
+  const noiseSuppression = useSoundboardStore((s) => s.noiseSuppression)
+  const setNoiseSuppression = useSoundboardStore((s) => s.setNoiseSuppression)
   const setHeadphoneSinkName = useSoundboardStore((s) => s.setHeadphoneSinkName)
   const micStatus = useSoundboardStore((s) => s.micStatus)
   const setMicInputVolumePercent = useSoundboardStore((s) => s.setMicInputVolumePercent)
@@ -58,6 +60,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   useEffect(() => {
     void window.api.app.getExecPath().then(setExecPath)
   }, [])
+
+  const defaultMicDescription =
+    sourceDevices.find((d) => d.name === micStatus?.defaultSourceName)?.description ?? null
 
   const exampleSoundName = sounds[0]?.name ?? 'Your Sound Name'
 
@@ -100,13 +105,35 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               onChange={(e) => void setMicSourceName(e.target.value || null)}
               className="rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-slate-200 outline-none focus:border-accent"
             >
-              <option value="">None selected</option>
+              <option value="">
+                {defaultMicDescription ? `System default (${defaultMicDescription})` : 'System default'}
+              </option>
               {sourceDevices.map((d) => (
                 <option key={d.name} value={d.name}>
                   {d.description}
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-slate-300">Noise suppression</span>
+            <select
+              value={noiseSuppression}
+              onChange={(e) => void setNoiseSuppression(e.target.value === 'local' ? 'local' : 'none')}
+              className="rounded-lg border border-base-600 bg-base-950 px-3 py-2 text-slate-200 outline-none focus:border-accent"
+            >
+              <option value="none">None</option>
+              <option value="local">Local (on this device)</option>
+            </select>
+            <span className="text-xs text-slate-500">
+              {noiseSuppression === 'local'
+                ? 'Removes background noise from your mic using a model that runs entirely on this computer — nothing is uploaded.'
+                : 'Your mic is passed through exactly as it is.'}
+            </span>
+            {micStatus?.noiseSuppressionError && (
+              <span className="text-xs text-amber-300">{micStatus.noiseSuppressionError}</span>
+            )}
           </label>
 
           <div className="flex flex-col gap-1.5">

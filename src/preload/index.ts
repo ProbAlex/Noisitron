@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AudioDevice,
   Folder,
+  NoiseSuppressionMode,
   Settings,
   Sound,
   VirtualMicStatus,
@@ -21,7 +22,14 @@ const api = {
     setMicSource: (sourceName: string | null): Promise<VirtualMicStatus> =>
       ipcRenderer.invoke('virtualMic:setMicSource', sourceName),
     setMicVolume: (percent: number): Promise<VirtualMicStatus> =>
-      ipcRenderer.invoke('virtualMic:setMicVolume', percent)
+      ipcRenderer.invoke('virtualMic:setMicVolume', percent),
+    setNoiseSuppression: (mode: NoiseSuppressionMode): Promise<VirtualMicStatus> =>
+      ipcRenderer.invoke('virtualMic:setNoiseSuppression', mode),
+    onStatusChanged: (callback: (status: VirtualMicStatus) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: VirtualMicStatus): void => callback(status)
+      ipcRenderer.on('virtualMic:statusChanged', listener)
+      return () => ipcRenderer.removeListener('virtualMic:statusChanged', listener)
+    }
   },
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),

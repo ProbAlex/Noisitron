@@ -18,7 +18,14 @@ import Store from 'electron-store'
 import * as audio from './audio'
 import { searchMyInstants, fetchMyInstantsAudio } from './myinstants'
 import { moveSoundInList } from '../shared/ordering'
-import { DEFAULT_SETTINGS, type Settings, type Sound, type Folder, type StoreSearchResult } from '../shared/types'
+import {
+  DEFAULT_SETTINGS,
+  type Settings,
+  type Sound,
+  type Folder,
+  type NoiseSuppressionMode,
+  type StoreSearchResult
+} from '../shared/types'
 
 const ALLOWED_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'webm']
 const ALLOWED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
@@ -420,11 +427,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle('devices:listSinks', () => audio.listSinks())
 
   ipcMain.handle('virtualMic:status', () => audio.getStatus())
-  ipcMain.handle('virtualMic:create', () => audio.createVirtualMic(store.get('micSourceName')))
+  ipcMain.handle('virtualMic:create', () =>
+    audio.createVirtualMic(store.get('micSourceName'), store.get('noiseSuppression'))
+  )
   ipcMain.handle('virtualMic:destroy', () => audio.destroyVirtualMic())
   ipcMain.handle('virtualMic:setMicSource', async (_e, sourceName: string | null) => {
     store.set('micSourceName', sourceName)
     return audio.setMicSource(sourceName)
+  })
+  ipcMain.handle('virtualMic:setNoiseSuppression', async (_e, mode: NoiseSuppressionMode) => {
+    const safeMode: NoiseSuppressionMode = mode === 'local' ? 'local' : 'none'
+    store.set('noiseSuppression', safeMode)
+    return audio.setNoiseSuppression(safeMode)
   })
   ipcMain.handle('virtualMic:setMicVolume', async (_e, percent: number) => {
     return audio.setMicLoopbackVolumePercent(percent)
@@ -718,6 +732,7 @@ app.on('before-quit', (e) => {
   // Electron's own shutdown can occasionally stall tearing down the
   // GPU/renderer processes; force-exit rather than leave a zombie process
   // once our pactl cleanup is done (or has had a fair chance to run).
+  audio.stopDefaultSourceWatcher()
   const forceExit = setTimeout(() => app.exit(0), 4000)
   audio
     .destroyVirtualMic()
@@ -729,6 +744,7 @@ app.on('before-quit', (e) => {
 })
 
 app.on('will-quit', () => {
+  audio.stopDefaultSourceWatcher()
   globalShortcut.unregisterAll()
   for (const id of [...folderWatchers.keys()]) unwatchFolder(id)
 })
@@ -776,6 +792,9 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers()
   createWindow(hasPlayFlag(process.argv))
+  // Keeps "System default" microphone honest: re-points the loopback (or tells the renderer, in
+  // local noise-suppression mode) whenever the OS default input changes.
+  audio.startDefaultSourceWatcher((status) => mainWindow?.webContents.send('virtualMic:statusChanged', status))
   createTray()
   probeGlobalShortcutSupport()
   syncShortcuts()

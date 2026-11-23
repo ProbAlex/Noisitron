@@ -1,5 +1,11 @@
-import { execFile } from 'child_process'
-import { VIRTUAL_MIC_SINK_DESCRIPTION, type AudioDevice, type VirtualMicStatus } from '../shared/types'
+import { execFile, spawn, type ChildProcess } from 'child_process'
+import {
+  VIRTUAL_MIC_SINK_DESCRIPTION,
+  type AudioDevice,
+  type NoiseSuppressionMode,
+  type VirtualMicStatus
+} from '../shared/types'
+import { startDenoisePipe, type DenoisePipe } from './denoise'
 
 /**
  * All routing goes through pactl. On PipeWire systems this talks to the
@@ -117,8 +123,17 @@ interface InternalState {
   sourceModuleId: string | null
   loopbackModuleId: string | null
   loopbackSinkInputIndex: number | null
+  /** source the loopback is currently reading from (null = no loopback loaded) */
   micSourceName: string | null
+  /** the user's explicit pick; null = follow the system default input */
+  selectedMicSource: string | null
+  /** the system default input, if usable as a mic (see isUsableMicSource) */
+  defaultSourceName: string | null
+  noiseSuppression: NoiseSuppressionMode
   micLoopbackVolumePercent: number
+  /** the running on-device denoise pipeline, if any (replaces the loopback while it runs) */
+  denoise: { sourceName: string; pipe: DenoisePipe } | null
+  noiseSuppressionError: string | null
 }
 
 const state: InternalState = {
@@ -127,7 +142,28 @@ const state: InternalState = {
   loopbackModuleId: null,
   loopbackSinkInputIndex: null,
   micSourceName: null,
-  micLoopbackVolumePercent: 100
+  selectedMicSource: null,
+  defaultSourceName: null,
+  noiseSuppression: 'none',
+  micLoopbackVolumePercent: 100,
+  denoise: null,
+  noiseSuppressionError: null
+}
+
+/** Never loop our own virtual mic (or any monitor source) back into itself - that's a feedback
+ *  loop, and can happen if the user has made Noisitron's mic their system default input. */
+function isUsableMicSource(name: string): boolean {
+  return name !== VIRTUAL_SOURCE_NAME && !name.endsWith('.monitor')
+}
+
+/** The system's current default input, or null if there is none / it isn't usable as a mic. */
+async function resolveDefaultSource(): Promise<string | null> {
+  try {
+    const name = await pactl(['get-default-source'])
+    return name && isUsableMicSource(name) ? name : null
+  } catch {
+    return null
+  }
 }
 
 async function loadVirtualSource(): Promise<void> {
@@ -182,12 +218,18 @@ export function getStatus(): VirtualMicStatus {
     active: state.sinkModuleId !== null,
     sinkName: VIRTUAL_SINK_NAME,
     monitorSourceName: VIRTUAL_SOURCE_NAME,
-    micSourceName: state.micSourceName,
-    micLoopbackVolumePercent: state.micLoopbackVolumePercent
+    micSourceName: state.denoise?.sourceName ?? state.micSourceName,
+    micLoopbackVolumePercent: state.micLoopbackVolumePercent,
+    defaultSourceName: state.defaultSourceName,
+    noiseSuppressionActive: state.denoise !== null,
+    noiseSuppressionError: state.noiseSuppressionError
   }
 }
 
-export async function createVirtualMic(micSourceName: string | null): Promise<VirtualMicStatus> {
+export async function createVirtualMic(
+  micSourceName: string | null,
+  noiseSuppression: NoiseSuppressionMode
+): Promise<VirtualMicStatus> {
   if (state.sinkModuleId === null) {
     await cleanupStaleModules()
     state.sinkModuleId = await pactl([
@@ -200,13 +242,14 @@ export async function createVirtualMic(micSourceName: string | null): Promise<Vi
   if (state.sourceModuleId === null) {
     await loadVirtualSource()
   }
-  if (micSourceName) {
-    await setMicSource(micSourceName)
-  }
+  state.selectedMicSource = micSourceName
+  state.noiseSuppression = noiseSuppression
+  await applyMicRouting()
   return getStatus()
 }
 
 export async function destroyVirtualMic(): Promise<void> {
+  stopDenoise()
   await unloadLoopback()
   await unloadVirtualSource()
   if (state.sinkModuleId) {
@@ -215,18 +258,141 @@ export async function destroyVirtualMic(): Promise<void> {
   state.sinkModuleId = null
 }
 
-export async function setMicSource(sourceName: string | null): Promise<VirtualMicStatus> {
-  await unloadLoopback()
-  if (sourceName && state.sinkModuleId !== null) {
-    await loadLoopback(sourceName)
-  } else {
-    state.micSourceName = sourceName
+function stopDenoise(): void {
+  state.denoise?.pipe.stop()
+  state.denoise = null
+}
+
+let routingQueue: Promise<void> = Promise.resolve()
+let denoiseRetries: number[] = []
+let onRoutingChanged: ((status: VirtualMicStatus) => void) | null = null
+
+/** Makes the mic path match the current settings, picking the chosen mic (or the system default
+ *  input if none is chosen):
+ *  - noise suppression 'none':  a pactl loopback straight into the virtual mic.
+ *  - noise suppression 'local': the on-device denoise pipe instead (a loopback as well would play
+ *    the voice twice). If the pipe can't run, fall back to the plain loopback so the user is never
+ *    left with no mic at all, and surface why.
+ *  Serialized, because it's triggered from IPC calls and from the default-source watcher. */
+function applyMicRouting(): Promise<void> {
+  routingQueue = routingQueue.then(doApplyMicRouting, doApplyMicRouting)
+  return routingQueue
+}
+
+async function doApplyMicRouting(): Promise<void> {
+  state.defaultSourceName = await resolveDefaultSource()
+  const target = state.sinkModuleId !== null ? state.selectedMicSource ?? state.defaultSourceName : null
+
+  let wantDenoise = target !== null && state.noiseSuppression === 'local'
+  if (!wantDenoise || state.denoise?.sourceName !== target) {
+    if (state.denoise) stopDenoise()
   }
+  if (wantDenoise && target && !state.denoise) {
+    try {
+      const pipe = await startDenoisePipe(
+        target,
+        VIRTUAL_SINK_NAME,
+        state.micLoopbackVolumePercent / 100,
+        (reason) => handleDenoiseDied(target, reason)
+      )
+      state.denoise = { sourceName: target, pipe }
+      state.noiseSuppressionError = null
+    } catch (err) {
+      state.noiseSuppressionError = `Noise suppression couldn't start (${err instanceof Error ? err.message : String(err)}).`
+      wantDenoise = false
+    }
+  }
+
+  const wantedLoopback = wantDenoise ? null : target
+  if (wantedLoopback === state.micSourceName && (wantedLoopback === null || state.loopbackModuleId !== null)) return
+  await unloadLoopback()
+  if (wantedLoopback) await loadLoopback(wantedLoopback)
+}
+
+/** The denoise pipe died by itself (device unplugged, parec/pacat killed...). Try again shortly;
+ *  if it keeps dying, give up and leave the plain loopback in place with an explanation. */
+function handleDenoiseDied(sourceName: string, reason: string): void {
+  if (state.denoise?.sourceName === sourceName) state.denoise = null
+  const now = Date.now()
+  denoiseRetries = denoiseRetries.filter((t) => now - t < 60_000)
+  denoiseRetries.push(now)
+  if (denoiseRetries.length > 3) {
+    state.noiseSuppressionError = `Noise suppression stopped (${reason}); the mic is passing through unprocessed.`
+    state.noiseSuppression = 'none'
+  }
+  setTimeout(() => {
+    void applyMicRouting()
+      .then(() => onRoutingChanged?.(getStatus()))
+      .catch(() => {})
+  }, 1000)
+}
+
+export async function setMicSource(sourceName: string | null): Promise<VirtualMicStatus> {
+  state.selectedMicSource = sourceName
+  await applyMicRouting()
   return getStatus()
+}
+
+export async function setNoiseSuppression(mode: NoiseSuppressionMode): Promise<VirtualMicStatus> {
+  state.noiseSuppression = mode
+  denoiseRetries = []
+  state.noiseSuppressionError = null
+  await applyMicRouting()
+  return getStatus()
+}
+
+let subscribeProcess: ChildProcess | null = null
+let subscribeStopped = false
+
+/** Re-resolves the system default input whenever the audio server reports a change. Needed
+ *  because `pactl set-default-source` doesn't alter the device list, so nothing else (e.g.
+ *  Chromium's devicechange) would ever tell us the default moved. `onChange` fires only when the
+ *  usable default actually changed, after the loopback (if any) has been re-pointed. */
+export function startDefaultSourceWatcher(onChange: (status: VirtualMicStatus) => void): void {
+  subscribeStopped = false
+  onRoutingChanged = onChange
+  let debounce: ReturnType<typeof setTimeout> | null = null
+
+  const handleServerChange = (): void => {
+    if (debounce) clearTimeout(debounce)
+    debounce = setTimeout(async () => {
+      if (state.sinkModuleId === null) return
+      const before = state.defaultSourceName
+      await applyMicRouting().catch(() => {})
+      if (state.defaultSourceName !== before) onChange(getStatus())
+    }, 200)
+  }
+
+  const launch = (): void => {
+    if (subscribeStopped) return
+    const child = spawn('pactl', ['subscribe'], { stdio: ['ignore', 'pipe', 'ignore'] })
+    subscribeProcess = child
+    let buffered = ''
+    child.stdout?.on('data', (chunk: Buffer) => {
+      buffered += chunk.toString()
+      const lines = buffered.split('\n')
+      buffered = lines.pop() ?? ''
+      if (lines.some((l) => /'change' on server/.test(l))) handleServerChange()
+    })
+    const retry = (): void => {
+      if (subscribeProcess === child) subscribeProcess = null
+      if (!subscribeStopped) setTimeout(launch, 2000)
+    }
+    child.on('exit', retry)
+    child.on('error', retry)
+  }
+  launch()
+}
+
+export function stopDefaultSourceWatcher(): void {
+  subscribeStopped = true
+  subscribeProcess?.kill()
+  subscribeProcess = null
 }
 
 export async function setMicLoopbackVolumePercent(percent: number): Promise<VirtualMicStatus> {
   state.micLoopbackVolumePercent = percent
+  state.denoise?.pipe.setGain(percent / 100)
   if (state.loopbackSinkInputIndex !== null) {
     await pactl(['set-sink-input-volume', String(state.loopbackSinkInputIndex), `${percent}%`])
   }
